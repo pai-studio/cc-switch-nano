@@ -10,27 +10,48 @@ pip install .
 
 需要 Python 3.10+，无第三方依赖。
 
+## 设置
+
+在 shell 配置文件（`~/.zshrc` 或 `~/.bashrc`）中设置 API Key：
+
+```bash
+# 非 Anthropic 模型需要对应的环境变量：
+export DEEPSEEK_API_KEY="sk-xxx"
+export OPENROUTER_API_KEY="sk-or-v1-xxx"
+export MINIMAX_API_KEY="sk-xxx"
+```
+
+然后执行 `source ~/.zshrc` 生效。如果某个 Key 未设置，切换时会自动提醒。
+
 ## 快速上手
 
 ```bash
 # 交互式选择
 claude-switch
 
-# 直接切换
+# 内置热门模型 — 一行切换，只需先设置好环境变量：
+claude-switch deepseek-pro       # DeepSeek v4 Pro     (需 $DEEPSEEK_API_KEY)
+claude-switch deepseek-flash     # DeepSeek v4 Flash
+claude-switch minimax-m2.7       # MiniMax m2.7        (需 $MINIMAX_API_KEY)
+claude-switch openrouter/glm-5         # 智谱 GLM-5 @ OpenRouter
+claude-switch openrouter/kimi-k2.6     # Moonshot Kimi K2.6
+claude-switch openrouter/gemini-flash  # Google Gemini 2.5 Flash
+
+# 直接切换 (Anthropic)
 claude-switch sonnet
 
 # 回退到上一个
 claude-switch -
 ```
 
-## 添加 Profile
+## 添加自定义 Profile
 
 ```bash
 # 简单模式：所有别名默认跟随模型名
-claude-switch add dp deepseek-v4-pro -p deepseek
+claude-switch add my-pro deepseek-v4-pro -p deepseek
 
 # 详细模式：覆盖指定别名
-claude-switch add dp deepseek-v4-pro -p deepseek --haiku deepseek-v4-flash
+claude-switch add my-pro deepseek-v4-pro -p deepseek --haiku deepseek-v4-flash
 
 # OpenRouter 示例
 claude-switch add or-sonnet anthropic/claude-sonnet-4-20250514 -p openrouter

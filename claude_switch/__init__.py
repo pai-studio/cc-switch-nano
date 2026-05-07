@@ -160,9 +160,9 @@ BUILTIN = {
     "deepseek-pro":    {"model": "deepseek-v4-pro",    "provider": "deepseek",   "aliases": {"haiku": "deepseek-v4-pro",    "sonnet": "deepseek-v4-pro",    "opus": "deepseek-v4-pro"}},
     "deepseek-flash":  {"model": "deepseek-v4-flash",  "provider": "deepseek",   "aliases": {"haiku": "deepseek-v4-flash",  "sonnet": "deepseek-v4-flash",  "opus": "deepseek-v4-flash"}},
     "minimax-m2.7":    {"model": "minimax-m2.7",       "provider": "minimax",    "aliases": {"haiku": "minimax-m2.7",       "sonnet": "minimax-m2.7",       "opus": "minimax-m2.7"}},
-    "glm-5":           {"model": "z-ai/glm-5",         "provider": "openrouter", "aliases": {"haiku": "z-ai/glm-5",          "sonnet": "z-ai/glm-5",          "opus": "z-ai/glm-5"}},
-    "kimi-k2.6":       {"model": "moonshotai/kimi-k2.6","provider": "openrouter", "aliases": {"haiku": "moonshotai/kimi-k2.6", "sonnet": "moonshotai/kimi-k2.6", "opus": "moonshotai/kimi-k2.6"}},
-    "gemini-flash":    {"model": "google/gemini-2.5-flash","provider": "openrouter", "aliases": {"haiku": "google/gemini-2.5-flash","sonnet": "google/gemini-2.5-flash","opus": "google/gemini-2.5-flash"}},
+    "openrouter/glm-5":          {"model": "z-ai/glm-5",            "provider": "openrouter", "aliases": {"haiku": "z-ai/glm-5",            "sonnet": "z-ai/glm-5",            "opus": "z-ai/glm-5"}},
+    "openrouter/kimi-k2.6":     {"model": "moonshotai/kimi-k2.6",   "provider": "openrouter", "aliases": {"haiku": "moonshotai/kimi-k2.6",   "sonnet": "moonshotai/kimi-k2.6",   "opus": "moonshotai/kimi-k2.6"}},
+    "openrouter/gemini-flash":  {"model": "google/gemini-2.5-flash","provider": "openrouter", "aliases": {"haiku": "google/gemini-2.5-flash","sonnet": "google/gemini-2.5-flash","opus": "google/gemini-2.5-flash"}},
 }
 BUILTIN_NAMES = set(BUILTIN.keys())
 

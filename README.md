@@ -10,27 +10,50 @@ pip install .
 
 Requires Python 3.10+. Zero dependencies.
 
+## Setup
+
+Set API keys in your shell profile (`~/.zshrc` or `~/.bashrc`):
+
+```bash
+# For built-in non-Anthropic models:
+export DEEPSEEK_API_KEY="sk-xxx"
+export OPENROUTER_API_KEY="sk-or-v1-xxx"
+export MINIMAX_API_KEY="sk-xxx"
+```
+
+Then reload: `source ~/.zshrc`
+
+If a key is missing, claude-switch will warn you when you switch.
+
 ## Quick Start
 
 ```bash
 # Interactive picker
 claude-switch
 
-# Direct switch
+# Built-in profiles — no config needed, just set the env var:
+claude-switch deepseek-pro       # DeepSeek v4 Pro  (via $DEEPSEEK_API_KEY)
+claude-switch deepseek-flash     # DeepSeek v4 Flash
+claude-switch minimax-m2.7       # MiniMax m2.7       (via $MINIMAX_API_KEY)
+claude-switch openrouter/glm-5         # Zhipu GLM-5 @ OpenRouter (via $OPENROUTER_API_KEY)
+claude-switch openrouter/kimi-k2.6     # Moonshot Kimi K2.6
+claude-switch openrouter/gemini-flash  # Google Gemini 2.5 Flash
+
+# Direct switch (Anthropic)
 claude-switch sonnet
 
 # Go back
 claude-switch -
 ```
 
-## Add Profiles
+## Add Custom Profiles
 
 ```bash
 # Simple: all aliases default to model name
-claude-switch add dp deepseek-v4-pro -p deepseek
+claude-switch add my-pro deepseek-v4-pro -p deepseek
 
 # Detailed: override specific aliases
-claude-switch add dp deepseek-v4-pro -p deepseek --haiku deepseek-v4-flash
+claude-switch add my-pro deepseek-v4-pro -p deepseek --haiku deepseek-v4-flash
 
 # OpenRouter example
 claude-switch add or-sonnet anthropic/claude-sonnet-4-20250514 -p openrouter
