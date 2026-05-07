@@ -37,4 +37,3 @@ htmlcov/
 # Misc
 .ruff_cache/
 .pypirc
-labs/

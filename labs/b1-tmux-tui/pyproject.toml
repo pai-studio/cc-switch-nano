@@ -1,0 +1,11 @@
+[project]
+name = "cc-tmux"
+version = "0.1.0"
+description = "Multi-session Claude Code manager — TUI + tmux backend"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=3.0",
+]
+
+[project.scripts]
+cc-tmux = "cc_tmux.cli:cli"

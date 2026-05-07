@@ -1,0 +1,12 @@
+[project]
+name = "cc-pty"
+version = "0.1.0"
+description = "Multi-session Claude Code manager — embedded PTY terminals in TUI"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=7",
+    "pyte>=0.8",
+]
+
+[project.scripts]
+cc-pty = "cc_pty.cli:cli"
