@@ -1,6 +1,6 @@
 # PLAN-001: cc-switch 设计审查与下一步计划
 
-> 版本: v0.4.0 → v1.0.0 路线图
+> 版本: v0.5.0 → v1.0.0 路线图
 > 日期: 2026-05-07
 > 状态: 审查完成，计划中
 
@@ -48,27 +48,30 @@
 | 翻译引擎 | ★★★★☆ | 覆盖了主要字段，settings/raw 未打通 |
 | 用户体验 | ★★★★☆ | picker 好用，但缺 edit/dry-run/preview |
 | 错误处理 | ★★★☆☆ | 提示信息不够统一，缺验证 |
-| 代码质量 | ★★★★☆ | 单文件 676 行，结构清晰，缺测试 |
+| 代码质量 | ★★★★☆ | 单文件 ~900 行，结构清晰，已修复已知 bug |
 | 可扩展性 | ★★★★☆ | provider 可扩展，但 profile schema 未完整体现 |
 
 ### 1.4 已发现的问题
 
-#### Bug
-1. **apply_profile 残留字段**：`cur.update(data)` 对 `env` 做了浅覆盖是正确的，但如果旧 settings 有 `alwaysThinkingEnabled: true` 而新 profile 没设，会残留。需显式清理。
-2. **write_json 未使用**：line 76 的 `write_json` 函数被定义但不再被调用，应删除。
-3. **profile_to_settings line 163**: `model = profile.get("model") or profile.get("model")` 自身重复，没意义。
+#### Bug (已修复)
+1. ~~**apply_profile 残留字段**~~ → 已修复: `NON_MODEL_KEYS` 在 merge 前清理
+2. ~~**write_json 未使用**~~ → 已删除 dead code
+3. ~~**profile_to_settings 重复表达式**~~ → 已修正
+4. ~~**show detail 泄露 token**~~ → 已修复: 仅显示"已设置/未设置"
+5. ~~**back 命令对已删除 profile 无验证**~~ → 已修复: 切换前检查 profile 存在性
 
 #### UX 缺失
-4. **无 edit 命令**：创建后无法修改，只能手动编辑 JSON。
-5. **无 dry-run**：无法预览切换后的 settings.json 内容。
-6. **无 inspect**：`list` 只有摘要，无法看单个 profile 的完整详情。
-7. **无 profile 验证**：添加时不做任何合法性校验（provider 存不存在、model 是否为空）。
-8. **add 缺 --thinking/--timeout**：settings/raw 字段在 schema 中有定义，但 CLI 无法设。
+6. **无 edit 命令**：创建后无法修改，只能手动编辑 JSON。
+7. ~~**无 dry-run**~~ → 已实现: `--dry-run`
+8. ~~**无 preview**~~ → 已实现: `--preview`
+9. ~~**无 inspect**~~ → 已实现: `show <name>` 展示完整详情
+10. ~~**无 profile 验证**~~ → 已实现: provider 存在性、model 非空、name 冲突检查
+11. **add 缺 --thinking/--timeout**：settings/raw 字段在 schema 中有定义，但 CLI 无法设。
 
 #### 健壮性
-9. **find_project_root()**：只在目标目录有 `.claude/` 时才返回，否则回退到 cwd。从项目子目录运行会找不到。
-10. **无配置迁移**：profile 格式变化时无版本号，无自动升级。
-11. **无 shell 补全**：不支持 bash/zsh/fish 的 tab 补全。
+12. **find_project_root()**：只向上查找不创建 `.claude/` 目录，从无 `.claude/` 的项目运行会回退到 cwd。
+13. **无配置迁移**：profile 格式变化时无版本号，无自动升级。
+14. **无 shell 补全**：不支持 bash/zsh/fish 的 tab 补全。
 
 ---
 
@@ -78,16 +81,16 @@
 
 目标：修复 bug，补齐基本体验
 
-| ID | 任务 | 说明 |
+| ID | 任务 | 状态 |
 |----|------|------|
-| P1.1 | 修复 apply_profile 残留 | 切换 profile 时清理上一个 profile 的 extra 字段 (alwaysThinkingEnabled 等) |
-| P1.2 | 删除 dead code | 移除未使用的 `write_json`，修正重复表达式 |
-| P1.3 | dry-run 模式 | `cc-switch <name> --dry-run` 只输出将要写入的 JSON，不实际写入 |
-| P1.4 | preview 模式 | 在 picker 中选择后先展示 preview，确认再写入 (`cc-switch --preview`) |
-| P1.5 | profile 详情 | `cc-switch show <name>` 展示单个 profile 的完整配置（含解析后的 token 来源） |
-| P1.6 | 验证 add 参数 | provider 存在性检查、model 非空、name 不与内置/已有冲突 |
-| P1.7 | 统一错误信息 | 所有错误输出格式统一，中英文消息归类 |
-| P1.8 | find_project_root 增强 | 从任意子目录向上查找 `.claude/`，兜底创建 `.claude/` |
+| P1.1 | 修复 apply_profile 残留字段 | ✅ 已完成 |
+| P1.2 | 删除 dead code | ✅ 已完成 |
+| P1.3 | dry-run 模式 | ✅ 已完成 |
+| P1.4 | preview 模式 | ✅ 已完成 |
+| P1.5 | profile 详情 (`show <name>`) | ✅ 已完成 |
+| P1.6 | 验证 add 参数 | ✅ 已完成 |
+| P1.7 | token 泄漏修复 + back 验证 | ✅ 已完成 |
+| P1.8 | find_project_root 增强 | ⬜ 待做 |
 
 ### Phase 2: CRUD 完整化 (v0.6.0) ⭐⭐⭐
 
@@ -254,7 +257,7 @@ edit <name>:
 
 | 版本 | 阶段 | 关键变化 | 预计行数 |
 |------|------|---------|---------|
-| v0.5.0 | 打磨 | P1.1~P1.8 | ~900 |
+| v0.5.0 | 打磨 | P1.1~P1.8 ✅ (P1.8 除外) | ~900 (当前) |
 | v0.6.0 | CRUD | P2.1~P2.6 | ~1200 |
 | v0.7.0 | DX | P3.1~P3.6 | ~1600 |
 | v0.8.0+ | 高级 | P4.1~P4.6 | ~2000+ |

@@ -608,7 +608,7 @@ def _cmd_show_detail(name: str) -> None:
     token = resolve_auth_token(cfg)
     source = auth_source_label(cfg)
     if token:
-        print(f"  token: {token[:8]}...  (来源: {source})")
+        print(f"  token: 已设置  (来源: {source})")
     else:
         print(f"  token: (未设置)  来源: {source}")
     print(f"  base_url: {resolve_base_url(cfg) or '(原生)'}")
@@ -898,6 +898,9 @@ def main() -> None:
         prev = get_previous_profile()
         if prev is None:
             err("没有上一条切换记录")
+            sys.exit(1)
+        if prev not in profiles:
+            err(f"上一个 profile '{prev}' 已不存在 (已删除?)")
             sys.exit(1)
         print(f"回退到上一步: {prev}")
         do_switch(prev, scope, path, label, dry_run=dry_run, preview=preview)
