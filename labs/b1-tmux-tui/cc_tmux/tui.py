@@ -6,6 +6,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label
+from textual.widgets.data_table import RowDoesNotExist
 
 from .manager import Manager
 
@@ -26,7 +27,8 @@ class NewSessionScreen(ModalScreen):
                 placeholder="Project path (e.g., . or ~/projects/app)", id="project", value="."
             )
             yield Input(
-                placeholder='Model (optional, e.g., sonnet, deepseek-pro)', id="model"
+                placeholder="cc model/profile (optional, e.g., sonnet, deepseek-flash)",
+                id="model",
             )
             with Horizontal(id="buttons"):
                 yield Button("Create", variant="primary", id="create")
@@ -60,7 +62,8 @@ class ModelScreen(ModalScreen):
             yield Label("Set Model", classes="title")
             yield Label(f"Current: {self._current}")
             yield Input(
-                placeholder="Model (e.g., sonnet, deepseek-pro, openrouter/...)", id="model"
+                placeholder="cc model/profile (e.g., sonnet, deepseek-flash)",
+                id="model",
             )
             with Horizontal(id="buttons"):
                 yield Button("Set", variant="primary", id="set")
@@ -74,6 +77,32 @@ class ModelScreen(ModalScreen):
 
     def on_mount(self):
         self.query_one("#model", Input).focus()
+
+
+class RenameScreen(ModalScreen):
+    """Modal: rename a session."""
+
+    def __init__(self, current: str):
+        super().__init__()
+        self._current = current
+
+    def compose(self):
+        with Vertical(id="dialog"):
+            yield Label("Rename Session", classes="title")
+            yield Label(f"Current: {self._current}")
+            yield Input(placeholder="New session name", id="name")
+            with Horizontal(id="buttons"):
+                yield Button("Rename", variant="primary", id="rename")
+                yield Button("Cancel", id="cancel")
+
+    def on_button_pressed(self, event: Button.Pressed):
+        if event.button.id == "rename":
+            self.dismiss(self.query_one("#name", Input).value.strip() or None)
+        else:
+            self.dismiss(None)
+
+    def on_mount(self):
+        self.query_one("#name", Input).focus()
 
 
 class ConfirmScreen(ModalScreen):
@@ -167,7 +196,7 @@ class TmuxApp(App):
         try:
             row = table.get_row_at(table.cursor_row)
             return str(row[0])
-        except (IndexError, TypeError):
+        except (IndexError, RowDoesNotExist, TypeError):
             self.notify("No session selected", severity="warning")
             return None
 
@@ -231,7 +260,7 @@ class TmuxApp(App):
         try:
             self.manager.set_model(name, model)
             self._refresh()
-            self.notify(f"Model → {model}")
+            self.notify(f"Restarted with model {model}")
         except RuntimeError as exc:
             self.notify(str(exc), severity="error", timeout=10)
 
@@ -240,7 +269,7 @@ class TmuxApp(App):
         if not name:
             return
         self.push_screen(
-            ModelScreen(current=name),
+            RenameScreen(current=name),
             lambda new: self._do_rename(name, new) if new else None,
         )
 

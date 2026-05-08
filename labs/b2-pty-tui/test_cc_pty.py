@@ -4,7 +4,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 # Patch the module-level constants BEFORE importing anything from cc_pty
 _real_home = Path.home()
@@ -129,6 +129,107 @@ def test_manager_apply_model_failure():
             assert "unknown profile" in str(e)
 
 
+def test_manager_apply_model_not_found():
+    """Manager.apply_model wraps FileNotFoundError."""
+    from cc_pty.manager import Manager
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        try:
+            Manager.apply_model("/tmp/proj", "m")
+            assert False, "should have raised"
+        except RuntimeError as e:
+            assert "claude-switch not found" in str(e)
+
+
+def test_manager_apply_model_timeout():
+    """Manager.apply_model wraps TimeoutExpired."""
+    from cc_pty.manager import Manager
+    import subprocess
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="x", timeout=15)):
+        try:
+            Manager.apply_model("/tmp/proj", "m")
+            assert False, "should have raised"
+        except RuntimeError as e:
+            assert "timed out" in str(e)
+
+
+def test_new_session_duplicate_skips_apply_model():
+    """Duplicate session names must fail before changing project model."""
+    import asyncio
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        data_dir = Path(td) / ".cc-pty"
+        sessions_file = data_dir / "sessions.json"
+        project_dir = Path(td) / "proj"
+        project_dir.mkdir()
+        with patch("cc_pty.manager.DATA_DIR", data_dir):
+            with patch("cc_pty.manager.SESSIONS_FILE", sessions_file):
+                from cc_pty.tui import PtyApp
+
+                app = PtyApp()
+                app.notify = MagicMock()
+                app.manager.add("dup", str(project_dir), "sonnet")
+
+                with patch(
+                    "cc_pty.tui.Manager.apply_model",
+                    side_effect=AssertionError("apply_model should not run"),
+                ):
+                    asyncio.run(
+                        app._on_new_session(
+                            {
+                                "name": "dup",
+                                "project": str(project_dir),
+                                "model": "opus",
+                            }
+                        )
+                    )
+
+                app.notify.assert_called()
+                assert "already exists" in str(app.notify.call_args.args[0])
+
+
+def test_manager_add_duplicate():
+    """Manager.add raises ValueError on duplicate name."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        with patch("cc_pty.manager.DATA_DIR", Path(td) / ".cc-pty"):
+            with patch("cc_pty.manager.SESSIONS_FILE", Path(td) / ".cc-pty" / "sessions.json"):
+                from cc_pty.manager import Manager
+                mgr = Manager()
+                mgr.add("dup", "/tmp/p1")
+                try:
+                    mgr.add("dup", "/tmp/p2")
+                    assert False, "should have raised"
+                except ValueError as e:
+                    assert "already exists" in str(e)
+
+
+def test_manager_rename_collision():
+    """Manager.rename raises ValueError on empty name or collision."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        with patch("cc_pty.manager.DATA_DIR", Path(td) / ".cc-pty"):
+            with patch("cc_pty.manager.SESSIONS_FILE", Path(td) / ".cc-pty" / "sessions.json"):
+                from cc_pty.manager import Manager
+                mgr = Manager()
+                mgr.add("a", "/tmp/p1")
+                mgr.add("b", "/tmp/p2")
+
+                # empty name
+                try:
+                    mgr.rename("a", "  ")
+                    assert False, "should have raised"
+                except ValueError as e:
+                    assert "cannot be empty" in str(e)
+
+                # collision
+                try:
+                    mgr.rename("a", "b")
+                    assert False, "should have raised"
+                except ValueError as e:
+                    assert "already exists" in str(e)
+
+
 # ── Test TerminalWidget statics ──
 
 def test_key_to_bytes_ctrl():
@@ -231,6 +332,48 @@ def test_key_to_bytes_unknown():
     assert TerminalWidget._key_to_bytes(event) == b""
 
 
+def test_terminal_widget_focusable():
+    """TerminalWidget must be keyboard-focusable for PTY input to work."""
+    from cc_pty.terminal_widget import TerminalWidget
+
+    assert TerminalWidget.can_focus is True
+    assert TerminalWidget.focus_on_click is True
+
+
+def test_ensure_terminal_recreates_dead_widget():
+    """Dead PTY widgets should be removed and recreated on selection."""
+    import asyncio
+    import tempfile
+
+    class DeadTerm:
+        _alive = False
+
+        def __init__(self):
+            self.removed = False
+
+        async def remove(self):
+            self.removed = True
+
+    with tempfile.TemporaryDirectory() as td:
+        data_dir = Path(td) / ".cc-pty"
+        sessions_file = data_dir / "sessions.json"
+        with patch("cc_pty.manager.DATA_DIR", data_dir):
+            with patch("cc_pty.manager.SESSIONS_FILE", sessions_file):
+                from cc_pty.tui import PtyApp
+
+                app = PtyApp()
+                dead = DeadTerm()
+                app._terminals["dead"] = dead
+                app._create_terminal = AsyncMock(return_value=True)
+
+                result = asyncio.run(app._ensure_terminal("dead"))
+
+                assert result is True
+                assert app._create_terminal.await_count == 1
+                assert dead.removed is True
+                assert "dead" not in app._terminals
+
+
 def test_resolve_color_ansi():
     """_resolve_color maps ANSI 0-15 to hex."""
     from cc_pty.terminal_widget import TerminalWidget, ANSI_COLORS
@@ -284,6 +427,13 @@ def test_special_map_completeness():
         assert k in SPECIAL_MAP, f"missing {k}"
 
 
+def test_app_bindings_not_priority():
+    """Global app shortcuts must not preempt terminal input."""
+    from cc_pty.tui import PtyApp
+
+    assert all(not binding.priority for binding in PtyApp.BINDINGS)
+
+
 # ── Test CLI ──
 
 def test_cli_default_tui():
@@ -319,17 +469,23 @@ if __name__ == "__main__":
         ("test_manager_detect_model_missing", test_manager_detect_model_missing),
         ("test_manager_apply_model", test_manager_apply_model),
         ("test_manager_apply_model_failure", test_manager_apply_model_failure),
+        ("test_manager_apply_model_not_found", test_manager_apply_model_not_found),
+        ("test_manager_apply_model_timeout", test_manager_apply_model_timeout),
+        ("test_manager_add_duplicate", test_manager_add_duplicate),
+        ("test_manager_rename_collision", test_manager_rename_collision),
         ("test_key_to_bytes_ctrl", test_key_to_bytes_ctrl),
         ("test_key_to_bytes_special", test_key_to_bytes_special),
         ("test_key_to_bytes_fkeys", test_key_to_bytes_fkeys),
         ("test_key_to_bytes_printable", test_key_to_bytes_printable),
         ("test_key_to_bytes_unknown", test_key_to_bytes_unknown),
+        ("test_terminal_widget_focusable", test_terminal_widget_focusable),
         ("test_resolve_color_ansi", test_resolve_color_ansi),
         ("test_resolve_color_256_unsupported", test_resolve_color_256_unsupported),
         ("test_resolve_color_truecolor", test_resolve_color_truecolor),
         ("test_resolve_color_invalid", test_resolve_color_invalid),
         ("test_control_map_coverage", test_control_map_coverage),
         ("test_special_map_completeness", test_special_map_completeness),
+        ("test_app_bindings_not_priority", test_app_bindings_not_priority),
         ("test_cli_default_tui", test_cli_default_tui),
         ("test_cli_list", test_cli_list),
     ]

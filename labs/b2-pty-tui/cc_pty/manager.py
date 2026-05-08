@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import tempfile
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
@@ -34,18 +35,35 @@ class Manager:
             for name, info in raw.items():
                 self._sessions[name] = Session(**info)
         except (json.JSONDecodeError, OSError, TypeError):
+            # Back up the corrupt file instead of silently wiping
+            corrupt = SESSIONS_FILE.with_suffix(".json.corrupt")
+            try:
+                SESSIONS_FILE.rename(corrupt)
+            except OSError:
+                pass
             self._sessions.clear()
 
     def _save(self) -> None:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         data = {name: asdict(s) for name, s in self._sessions.items()}
-        SESSIONS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        payload = json.dumps(data, indent=2, ensure_ascii=False)
+
+        # Atomic write: temp file → fsync → os.replace
+        tmp = SESSIONS_FILE.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(SESSIONS_FILE)
 
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------
 
     def add(self, name: str, project: str, model: str = "?") -> Session:
+        """Add a new session.  Raises ValueError if name already exists."""
+        if name in self._sessions:
+            raise ValueError(f"Session '{name}' already exists")
         s = Session(
             name=name,
             project=os.path.abspath(os.path.expanduser(project)),
@@ -66,6 +84,11 @@ class Manager:
         return list(self._sessions.values())
 
     def rename(self, old: str, new: str) -> Optional[Session]:
+        """Rename a session.  Raises ValueError if new name is empty or taken."""
+        if not new.strip():
+            raise ValueError("Session name cannot be empty")
+        if new != old and new in self._sessions:
+            raise ValueError(f"Session '{new}' already exists")
         s = self._sessions.pop(old, None)
         if s is not None:
             s.name = new
@@ -88,13 +111,23 @@ class Manager:
 
     @staticmethod
     def apply_model(project: str, model: str) -> None:
-        r = subprocess.run(
-            ["claude-switch", model],
-            cwd=project,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        """Run claude-switch for the given project.  Wraps all exceptions."""
+        try:
+            r = subprocess.run(
+                ["claude-switch", model],
+                cwd=project,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except FileNotFoundError:
+            raise RuntimeError(
+                "claude-switch not found. Install with: pip install claude-switch"
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("claude-switch timed out after 15s")
+        except OSError as exc:
+            raise RuntimeError(f"claude-switch failed: {exc}")
         if r.returncode != 0:
             raise RuntimeError(
                 f"claude-switch: {r.stderr.strip() or r.stdout.strip()}"

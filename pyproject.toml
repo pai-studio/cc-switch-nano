@@ -3,12 +3,20 @@ name = "claude-switch"
 version = "0.5.0"
 description = "一键切换 claude-code 模型 — 像 opencode 一样在多 provider 间自由切换"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 readme = "README.md"
+dependencies = [
+    "textual>=0.80",
+]
 
 [project.scripts]
 claude-switch = "claude_switch:main"
+ccs = "claude_switch.ccs:main"
 
 [build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["claude_switch*"]
+exclude = ["labs*"]

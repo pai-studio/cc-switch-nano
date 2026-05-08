@@ -1,10 +1,13 @@
 """Custom Textual widget that embeds a PTY terminal using pyte."""
 
 import atexit
+import fcntl
 import os
 import pty
 import select
 import signal
+import struct
+import termios
 from typing import Optional
 
 from rich.style import Style
@@ -15,7 +18,7 @@ from textual.widget import Widget
 
 import pyte
 
-# ANSI 16-colour palette → hex colours
+# ANSI 16-colour palette -> hex colours
 ANSI_COLORS = [
     "#000000",  # 0  black
     "#cd0000",  # 1  red
@@ -35,14 +38,14 @@ ANSI_COLORS = [
     "#ffffff",  # 15 bright white
 ]
 
-# F-keys → byte sequences (xterm)
+# F-keys -> byte sequences (xterm)
 _FKEY_MAP: dict[int, bytes] = {
     1: b"\x1bOP", 2: b"\x1bOQ", 3: b"\x1bOR", 4: b"\x1bOS",
     5: b"\x1b[15~", 6: b"\x1b[17~", 7: b"\x1b[18~", 8: b"\x1b[19~",
     9: b"\x1b[20~", 10: b"\x1b[21~", 11: b"\x1b[23~", 12: b"\x1b[24~",
 }
 
-# Ctrl+letter → byte value
+# Ctrl+letter -> byte value
 CONTROL_MAP: dict[str, int] = {
     f"ctrl+{chr(ord('a') + i)}": i + 1 for i in range(26)
 }
@@ -58,7 +61,7 @@ CONTROL_MAP.update(
     }
 )
 
-# Special keys → byte sequences
+# Special keys -> byte sequences
 SPECIAL_MAP: dict[str, bytes] = {
     "enter": b"\r",
     "backspace": b"\x7f",
@@ -80,18 +83,24 @@ SPECIAL_MAP: dict[str, bytes] = {
 class TerminalWidget(Widget):
     """A Textual widget that renders a PTY-managed child process."""
 
+    can_focus = True
+    focus_on_click = True
+
     DEFAULT_CSS = """
     TerminalWidget {
         height: 100%;
         width: 100%;
+        border: none;
+        padding: 0;
     }
     TerminalWidget:focus {
-        border: solid $accent;
-    }
-    TerminalWidget {
-        border: solid $surface;
+        background: $boost;
     }
     """
+
+    # Registry of all child PIDs -- cleaned up on abnormal exit
+    _all_pids: "list[int]" = []
+    _atexit_registered = False
 
     def __init__(
         self,
@@ -132,19 +141,41 @@ class TerminalWidget(Widget):
         pid, fd = pty.fork()
         if pid == 0:  # child
             try:
+                # Use a full-featured terminal type so Claude Code can render cleanly.
+                os.environ["TERM"] = "xterm-256color"
+                os.environ.setdefault("COLORTERM", "truecolor")
                 if self._cwd:
                     os.chdir(self._cwd)
-                os.execvp("sh", ["sh", "-c", self._command])
-            except Exception:
-                pass
-            os._exit(1)
+                os.execvp(self._command.split()[0], self._command.split())
+            except Exception as exc:
+                os.write(2, f"exec failed: {exc}\r\n".encode())
+                os._exit(127)
         self._pid = pid
         self._fd = fd
         self._alive = True
+        self._set_pty_size(self._rows, self._cols)
         TerminalWidget._all_pids.append(pid)
         if not TerminalWidget._atexit_registered:
             atexit.register(TerminalWidget._kill_all_orphans)
             TerminalWidget._atexit_registered = True
+
+    # ------------------------------------------------------------------
+    # PTY size
+    # ------------------------------------------------------------------
+
+    def _set_pty_size(self, rows: int, cols: int) -> None:
+        """Set kernel PTY window size via TIOCSWINSZ."""
+        if self._fd is None:
+            return
+        try:
+            winsize = struct.pack("HHHH", rows, cols, 0, 0)
+            fcntl.ioctl(self._fd, termios.TIOCSWINSZ, winsize)
+        except OSError:
+            pass
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _kill_all_orphans() -> None:
@@ -177,6 +208,23 @@ class TerminalWidget(Widget):
                 pass
             self._fd = None
 
+    def _mark_exited(self) -> None:
+        """Called when the child process exits -- immediate reap + close."""
+        self._alive = False
+        if self._pid is not None:
+            try:
+                os.waitpid(self._pid, os.WNOHANG)
+            except (OSError, ChildProcessError):
+                pass
+            self._pid = None
+        if self._fd is not None:
+            try:
+                os.close(self._fd)
+            except OSError:
+                pass
+            self._fd = None
+        self.refresh()
+
     # ------------------------------------------------------------------
     # PTY polling
     # ------------------------------------------------------------------
@@ -194,11 +242,9 @@ class TerminalWidget(Widget):
                 self._stream.feed(data.decode("utf-8", errors="replace"))
                 self.refresh()
             else:
-                self._alive = False
-                self.refresh()
+                self._mark_exited()
         except (OSError, ValueError):
-            self._alive = False
-            self.refresh()
+            self._mark_exited()
 
     # ------------------------------------------------------------------
     # Rendering
@@ -232,9 +278,9 @@ class TerminalWidget(Widget):
             text.append(ch, style)
         return Strip(text.render(self.app.console))
 
-    # Registry of all child PIDs -- cleaned up on abnormal exit
-    _all_pids: "list[int]" = []
-    _atexit_registered = False
+    # ------------------------------------------------------------------
+    # Colour helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _resolve_color(c) -> "str | None":
@@ -277,7 +323,7 @@ class TerminalWidget(Widget):
         return Style(**attrs)
 
     # ------------------------------------------------------------------
-    # Keyboard input  →  PTY
+    # Keyboard input  ->  PTY
     # ------------------------------------------------------------------
 
     def on_key(self, event: Key) -> None:
@@ -333,6 +379,7 @@ class TerminalWidget(Widget):
             self._cols = cols
             self._rows = rows
             self._screen.resize(rows, cols)
+            self._set_pty_size(rows, cols)
             if self._pid is not None:
                 try:
                     os.kill(self._pid, signal.SIGWINCH)

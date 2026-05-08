@@ -1,0 +1,1163 @@
+# 说明
+
+提示：您可以根据标记的行号进行阅读。
+
+## 文件列表
+
+共合并了 7 个文件:
+
+1. `README.md` L23-L164
+2. `cc_pty/__init__.py` L166-L174
+3. `cc_pty/__main__.py` L176-L187
+4. `cc_pty/cli.py` L189-L248
+5. `cc_pty/manager.py` L250-L375
+6. `cc_pty/terminal_widget.py` L377-L722
+7. `cc_pty/tui.py` L724-L1162
+
+## 文件内容
+
+各文件内容详见下方:
+
+---
+
+### README.md L23-L164
+
+文件路径: `README.md`
+
+```markdown
+# cc-pty — 多会话 Claude Code 管理器
+
+基于 PTY 伪终端的 TUI 多会话管理工具。纯 Python 实现，不依赖 tmux。
+
+## 原理
+
+```
+┌──────────────────────────────────────────┐
+│  Textual TUI                             │
+│  ┌──────────┬──────────────────────────┐ │
+│  │  侧栏    │      终端渲染区 (pyte)     │ │
+│  │          │                          │ │
+│  │ ○ sess1  │  ┌────────────────────┐  │ │
+│  │ ● sess2  │  │  Claude Code 实例  │  │ │
+│  │ ○ sess3  │  │  (pty.fork)        │  │ │
+│  │          │  └────────────────────┘  │ │
+│  │ [Ctrl+N] │                          │ │
+│  │ [Ctrl+W] │  输入 → PTY              │ │
+│  └──────────┴──────────────────────────┘ │
+└──────────────────────────────────────────┘
+```
+
+每个 Claude Code 实例运行在独立伪终端中。`pyte` 库将 ANSI 转义序列渲染为 Rich 文本，直接在 Textual 界面中显示。会话元数据持久化到 `~/.cc-pty/sessions.json` 中。
+
+## 安装
+
+```bash
+cd labs/b2-pty-tui
+pip install -e .
+```
+
+依赖：Python 3.10+、textual、pyte（自动安装）。
+
+## 使用方法
+
+### 启动 TUI
+
+```bash
+cc-pty
+```
+
+### CLI 命令
+
+```bash
+cc-pty list       # 列出所有会话
+cc-pty tui        # 启动 TUI（等同于 cc-pty）
+```
+
+### TUI 快捷键
+
+| 按键 | 功能 |
+|------|------|
+| `Ctrl+N` | 新建会话 — 弹窗输入名称、项目路径、模型 |
+| `Ctrl+W` | 杀掉当前会话 — 需要确认 |
+| `Ctrl+R` | 重命名 / 切换模型 — 弹窗修改 |
+| `Ctrl+Space` | 焦点切换到侧栏列表 |
+| `F5` | 刷新侧栏 |
+| `Ctrl+Q` | 退出 |
+| `↑ / ↓` | 侧栏中导航 |
+| `Enter` | 切换到选中的会话 |
+| 鼠标点击 | 点击侧栏条目切换会话 |
+
+### 新建会话流程
+
+1. 按 `Ctrl+N` 弹出新建对话框
+2. 填写**会话名称**（必填）
+3. 填写**项目路径**（必填，支持 `.`、`~`、相对路径）
+4. 填写**模型**（可选，如 `sonnet`、`deepseek-pro`）
+   - 填写则自动调用 `claude-switch` 切换模型
+   - 不填写则自动检测当前 settings.json 中的模型
+5. 点击 **Create** 或回车确认
+
+### 重命名 / 更换模型
+
+1. 选中会话后按 `Ctrl+R`
+2. 修改名称和/或模型
+3. 点击 **Apply** 确认
+
+> **注意：** 重命名不会影响已经在运行的 Claude Code 进程，仅修改元数据。
+
+## 数据存储
+
+会话信息保存在 `~/.cc-pty/sessions.json`：
+
+```jsonc
+{
+  "my-project": {
+    "name": "my-project",
+    "project": "/Users/me/projects/my-project",
+    "model": "sonnet"        // 由 claude-switch 设置
+  }
+}
+```
+
+删除会话会从元数据中移除，但不会删除项目文件。
+
+## 与 claude-switch 集成
+
+cc-pty 依赖 `claude-switch` 来切换模型：
+
+- 新建会话时如果指定了模型，内部调用 `claude-switch <model>`
+- 重命名时可以更换模型，同样调用 `claude-switch`
+- 需要确保 `claude-switch` 已安装且对应的 API Key 已设置
+
+```bash
+# 确保 claude-switch 可用
+which claude-switch
+```
+
+## 常见问题
+
+**Q: 会话关闭后能恢复吗？**
+
+不能。当前版本 PTY 会话关闭后进程即终止，没有持久化。未来版本可能支持 session detach。
+
+**Q: 可以同时运行多少个会话？**
+
+理论上没有限制，但每个会话占用一个 PTY 进程。实际受系统资源限制。
+
+**Q: 退出 TUI 后会话还在吗？**
+
+退出 TUI 会关闭所有终端进程。如需后台运行，考虑使用 tmux 方案（`b1-tmux-tui`）。
+
+**Q: 颜色显示不对？**
+
+终端颜色支持 16 色 ANSI 调色板 + 真彩色（`#rrggbb`）。256 色调色板暂不支持。
+
+## 与 b1-tmux-tui 对比
+
+| 特性 | b2-pty-tui (本方案) | b1-tmux-tui |
+|------|---------------------|-------------|
+| 依赖 | 纯 Python | 需要 tmux |
+| 持久化 | 无（关闭即终止） | tmux session 持久 |
+| 渲染 | pyte 终端模拟 | 由 tmux 处理 |
+| 退出后 | 全部关闭 | 会话仍运行 |
+| 适用场景 | 开发 / 调试 | 长期运行 / 生产 |
+```
+
+### __init__.py L166-L174
+
+文件路径: `cc_pty/__init__.py`
+
+```python
+"""cc-pty: multi-session Claude Code manager — embedded PTY terminals."""
+
+__version__ = "0.1.0"
+```
+
+### __main__.py L176-L187
+
+文件路径: `cc_pty/__main__.py`
+
+```python
+"""python -m cc_pty entry point."""
+
+from .cli import cli
+
+if __name__ == "__main__":
+    cli()
+```
+
+### cli.py L189-L248
+
+文件路径: `cc_pty/cli.py`
+
+```python
+"""CLI for cc-pty."""
+
+import sys
+from pathlib import Path
+
+from .manager import Manager
+
+
+def cmd_list() -> None:
+    mgr = Manager()
+    sessions = mgr.list()
+    if not sessions:
+        print("No sessions.  Create one in the TUI (cc-pty tui).")
+        return
+    hdr = f"{'Name':<20} {'Project':<20} {'Model':<22}"
+    sep = "─" * len(hdr)
+    print(hdr)
+    print(sep)
+    for s in sessions:
+        pname = Path(s.project).name if s.project else "?"
+        print(f"{s.name:<20} {pname:<20} {s.model:<22}")
+
+
+def cmd_tui() -> None:
+    from .tui import PtyApp
+
+    app = PtyApp()
+    app.run()
+
+
+def cli() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="cc-pty",
+        description="Multi-session Claude Code manager (embedded PTY)",
+    )
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="tui",
+        choices=["tui", "list"],
+        help="Command (default: tui)",
+    )
+    args = parser.parse_args()
+
+    if args.command == "list":
+        cmd_list()
+    else:
+        cmd_tui()
+
+
+if __name__ == "__main__":
+    cli()
+```
+
+### manager.py L250-L375
+
+文件路径: `cc_pty/manager.py`
+
+```python
+"""Session metadata persistence for cc-pty."""
+
+import json
+import os
+import subprocess
+from dataclasses import dataclass, asdict
+from pathlib import Path
+from typing import Optional
+
+DATA_DIR = Path.home() / ".cc-pty"
+SESSIONS_FILE = DATA_DIR / "sessions.json"
+
+
+@dataclass
+class Session:
+    """Metadata for a Claude Code session."""
+    name: str
+    project: str
+    model: str = "?"
+
+
+class Manager:
+    """Persist and retrieve session metadata."""
+
+    def __init__(self):
+        self._sessions: dict[str, Session] = {}
+        self._load()
+
+    def _load(self) -> None:
+        if not SESSIONS_FILE.exists():
+            return
+        try:
+            raw = json.loads(SESSIONS_FILE.read_text())
+            for name, info in raw.items():
+                self._sessions[name] = Session(**info)
+        except (json.JSONDecodeError, OSError, TypeError):
+            self._sessions.clear()
+
+    def _save(self) -> None:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        data = {name: asdict(s) for name, s in self._sessions.items()}
+        SESSIONS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
+
+    def add(self, name: str, project: str, model: str = "?") -> Session:
+        s = Session(
+            name=name,
+            project=os.path.abspath(os.path.expanduser(project)),
+            model=model,
+        )
+        self._sessions[name] = s
+        self._save()
+        return s
+
+    def remove(self, name: str) -> None:
+        self._sessions.pop(name, None)
+        self._save()
+
+    def get(self, name: str) -> Optional[Session]:
+        return self._sessions.get(name)
+
+    def list(self) -> list[Session]:
+        return list(self._sessions.values())
+
+    def rename(self, old: str, new: str) -> Optional[Session]:
+        s = self._sessions.pop(old, None)
+        if s is not None:
+            s.name = new
+            self._sessions[new] = s
+            self._save()
+            return s
+        return None
+
+    def set_model(self, name: str, model: str) -> bool:
+        s = self._sessions.get(name)
+        if s is None:
+            return False
+        s.model = model
+        self._save()
+        return True
+
+    # ------------------------------------------------------------------
+    # Model helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def apply_model(project: str, model: str) -> None:
+        r = subprocess.run(
+            ["claude-switch", model],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if r.returncode != 0:
+            raise RuntimeError(
+                f"claude-switch: {r.stderr.strip() or r.stdout.strip()}"
+            )
+
+    @staticmethod
+    def detect_model(project: str) -> str:
+        settings = Path(project) / ".claude" / "settings.json"
+        if not settings.exists():
+            return "?"
+        try:
+            data = json.loads(settings.read_text())
+        except (json.JSONDecodeError, OSError):
+            return "?"
+        m = data.get("model") or (data.get("models") or {}).get("default")
+        if m:
+            return m
+        models = data.get("models")
+        if isinstance(models, dict):
+            for v in models.values():
+                if isinstance(v, str):
+                    return v
+        return "?"
+```
+
+### terminal_widget.py L377-L722
+
+文件路径: `cc_pty/terminal_widget.py`
+
+```python
+"""Custom Textual widget that embeds a PTY terminal using pyte."""
+
+import atexit
+import os
+import pty
+import select
+import signal
+from typing import Optional
+
+from rich.style import Style
+from rich.text import Text as RichText
+from textual.events import Key, Resize
+from textual.strip import Strip
+from textual.widget import Widget
+
+import pyte
+
+# ANSI 16-colour palette → hex colours
+ANSI_COLORS = [
+    "#000000",  # 0  black
+    "#cd0000",  # 1  red
+    "#00cd00",  # 2  green
+    "#cdcd00",  # 3  brown
+    "#0000ee",  # 4  blue
+    "#cd00cd",  # 5  magenta
+    "#00cdcd",  # 6  cyan
+    "#e5e5e5",  # 7  white
+    "#7f7f7f",  # 8  bright black
+    "#ff0000",  # 9  bright red
+    "#00ff00",  # 10 bright green
+    "#ffff00",  # 11 bright yellow
+    "#5c5cff",  # 12 bright blue
+    "#ff00ff",  # 13 bright magenta
+    "#00ffff",  # 14 bright cyan
+    "#ffffff",  # 15 bright white
+]
+
+# F-keys → byte sequences (xterm)
+_FKEY_MAP: dict[int, bytes] = {
+    1: b"\x1bOP", 2: b"\x1bOQ", 3: b"\x1bOR", 4: b"\x1bOS",
+    5: b"\x1b[15~", 6: b"\x1b[17~", 7: b"\x1b[18~", 8: b"\x1b[19~",
+    9: b"\x1b[20~", 10: b"\x1b[21~", 11: b"\x1b[23~", 12: b"\x1b[24~",
+}
+
+# Ctrl+letter → byte value
+CONTROL_MAP: dict[str, int] = {
+    f"ctrl+{chr(ord('a') + i)}": i + 1 for i in range(26)
+}
+CONTROL_MAP.update(
+    {
+        "ctrl+@": 0,
+        "ctrl+[": 27,
+        "ctrl+\\": 28,
+        "ctrl+]": 29,
+        "ctrl+^": 30,
+        "ctrl+_": 31,
+        "ctrl+backspace": 127,
+    }
+)
+
+# Special keys → byte sequences
+SPECIAL_MAP: dict[str, bytes] = {
+    "enter": b"\r",
+    "backspace": b"\x7f",
+    "tab": b"\t",
+    "escape": b"\x1b",
+    "up": b"\x1b[A",
+    "down": b"\x1b[B",
+    "right": b"\x1b[C",
+    "left": b"\x1b[D",
+    "home": b"\x1b[H",
+    "end": b"\x1b[F",
+    "page_up": b"\x1b[5~",
+    "page_down": b"\x1b[6~",
+    "delete": b"\x1b[3~",
+    "insert": b"\x1b[2~",
+}
+
+
+class TerminalWidget(Widget):
+    """A Textual widget that renders a PTY-managed child process."""
+
+    DEFAULT_CSS = """
+    TerminalWidget {
+        height: 100%;
+        width: 100%;
+    }
+    TerminalWidget:focus {
+        border: solid $accent;
+    }
+    TerminalWidget {
+        border: solid $surface;
+    }
+    """
+
+    def __init__(
+        self,
+        command: str,
+        cwd: Optional[str] = None,
+        session_name: str = "",
+    ) -> None:
+        super().__init__()
+        self._command = command
+        self._cwd = cwd
+        self.session_name = session_name
+
+        self._pid: Optional[int] = None
+        self._fd: Optional[int] = None
+        self._screen: Optional[pyte.Screen] = None
+        self._stream: Optional[pyte.Stream] = None
+        self._alive = False
+        self._timer: Optional[object] = None
+        self._cols = 80
+        self._rows = 24
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def on_mount(self) -> None:
+        self._cols = max(20, self.size.width)
+        self._rows = max(5, self.size.height)
+        self._screen = pyte.Screen(self._cols, self._rows)
+        self._stream = pyte.Stream(self._screen)
+        self._spawn()
+        self._timer = self.set_interval(1 / 30, self._poll)
+
+    def on_unmount(self) -> None:
+        self._cleanup()
+
+    def _spawn(self) -> None:
+        pid, fd = pty.fork()
+        if pid == 0:  # child
+            try:
+                if self._cwd:
+                    os.chdir(self._cwd)
+                os.execvp("sh", ["sh", "-c", self._command])
+            except Exception:
+                pass
+            os._exit(1)
+        self._pid = pid
+        self._fd = fd
+        self._alive = True
+        TerminalWidget._all_pids.append(pid)
+        if not TerminalWidget._atexit_registered:
+            atexit.register(TerminalWidget._kill_all_orphans)
+            TerminalWidget._atexit_registered = True
+
+    @staticmethod
+    def _kill_all_orphans() -> None:
+        for pid in TerminalWidget._all_pids:
+            try:
+                os.kill(pid, signal.SIGHUP)
+                os.waitpid(pid, 0)
+            except (OSError, ChildProcessError):
+                pass
+
+    def _cleanup(self) -> None:
+        self._alive = False
+        if self._timer is not None:
+            try:
+                self._timer.stop()
+            except Exception:
+                pass
+            self._timer = None
+        if self._pid is not None:
+            try:
+                os.kill(self._pid, signal.SIGHUP)
+                os.waitpid(self._pid, 0)
+            except (OSError, ChildProcessError):
+                pass
+            self._pid = None
+        if self._fd is not None:
+            try:
+                os.close(self._fd)
+            except OSError:
+                pass
+            self._fd = None
+
+    # ------------------------------------------------------------------
+    # PTY polling
+    # ------------------------------------------------------------------
+
+    def _poll(self) -> None:
+        if not self._alive or self._fd is None:
+            self.refresh()
+            return
+        try:
+            r, _, _ = select.select([self._fd], [], [], 0)
+            if not r:
+                return
+            data = os.read(self._fd, 65536)
+            if data:
+                self._stream.feed(data.decode("utf-8", errors="replace"))
+                self.refresh()
+            else:
+                self._alive = False
+                self.refresh()
+        except (OSError, ValueError):
+            self._alive = False
+            self.refresh()
+
+    # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
+
+    def render_line(self, y: int) -> Strip:
+        if self._screen is None or y >= self._screen.lines:
+            return Strip.blank(self.size.width, self.visual_style.rich_style)
+
+        line = self._screen.buffer[y]
+        # Build as (char, style) segments so we can modify a single cell for the cursor
+        segments: list[tuple[str, Style]] = []
+
+        for x in range(self._screen.columns):
+            ch = line.get(x, self._screen.default_char)
+            style = self._char_style(ch)
+            segments.append((ch.data or " ", style))
+
+        # Cursor on this line
+        if y == self._screen.cursor.y and self._alive:
+            cx = self._screen.cursor.x
+            if 0 <= cx < len(segments):
+                ch, _ = segments[cx]
+                if ch.strip():
+                    segments[cx] = (ch, Style(reverse=True))
+                else:
+                    segments[cx] = (" ", Style(color="white", bgcolor="white"))
+
+        text = RichText()
+        for ch, style in segments:
+            text.append(ch, style)
+        return Strip(text.render(self.app.console))
+
+    # Registry of all child PIDs -- cleaned up on abnormal exit
+    _all_pids: "list[int]" = []
+    _atexit_registered = False
+
+    @staticmethod
+    def _resolve_color(c) -> "str | None":
+        """Convert pyte colour (int 0-15 or hex str) to a hex string."""
+        if isinstance(c, int):
+            if 0 <= c < 16:
+                return ANSI_COLORS[c]
+            return None  # 256-color palette -- not supported
+        if isinstance(c, str) and c.startswith("#"):
+            return c  # true-color hex
+        return None
+
+    @staticmethod
+    def _char_style(ch: "pyte.screens.Char") -> Style:
+        """Convert a pyte Char to a rich Style."""
+        attrs: dict = {}
+        if ch.bold:
+            attrs["bold"] = True
+        if ch.italics:
+            attrs["italic"] = True
+        if ch.underscore:
+            attrs["underline"] = True
+        if ch.blink:
+            attrs["blink"] = True
+        if ch.strikethrough:
+            attrs["strikethrough"] = True
+
+        fg = TerminalWidget._resolve_color(ch.fg)
+        bg = TerminalWidget._resolve_color(ch.bg)
+
+        if ch.reverse:
+            attrs["color"] = bg or "white"
+            attrs["bgcolor"] = fg or "black"
+        else:
+            if fg:
+                attrs["color"] = fg
+            if bg:
+                attrs["bgcolor"] = bg
+
+        return Style(**attrs)
+
+    # ------------------------------------------------------------------
+    # Keyboard input  →  PTY
+    # ------------------------------------------------------------------
+
+    def on_key(self, event: Key) -> None:
+        if not self._alive or self._fd is None:
+            return
+        data = self._key_to_bytes(event)
+        if data:
+            try:
+                os.write(self._fd, data)
+            except OSError:
+                pass
+            event.prevent_default()
+
+    @staticmethod
+    def _key_to_bytes(event: Key) -> bytes:
+        key = event.key
+        char = event.character
+
+        # Ctrl+letter
+        if key in CONTROL_MAP:
+            return bytes([CONTROL_MAP[key]])
+
+        # Named special keys
+        if key in SPECIAL_MAP:
+            return SPECIAL_MAP[key]
+
+        # F-keys
+        if key.startswith("f") and len(key) <= 3:
+            try:
+                n = int(key[1:])
+            except ValueError:
+                pass
+            else:
+                if 1 <= n <= 12:
+                    return _FKEY_MAP[n]
+
+        # Printable character
+        if char is not None:
+            return char.encode("utf-8")
+        if len(key) == 1:
+            return key.encode("utf-8")
+
+        return b""
+
+    # ------------------------------------------------------------------
+    # Resize
+    # ------------------------------------------------------------------
+
+    def on_resize(self, event: Resize) -> None:
+        cols = max(20, event.size.width)
+        rows = max(5, event.size.height)
+        if self._screen and (cols != self._cols or rows != self._rows):
+            self._cols = cols
+            self._rows = rows
+            self._screen.resize(rows, cols)
+            if self._pid is not None:
+                try:
+                    os.kill(self._pid, signal.SIGWINCH)
+                except OSError:
+                    pass
+```
+
+### tui.py L724-L1162
+
+文件路径: `cc_pty/tui.py`
+
+```python
+"""TUI for cc-pty — sidebar + embedded terminal emulator."""
+
+import shlex
+from pathlib import Path
+
+from textual import work
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    Static,
+)
+
+from .manager import Manager, Session
+from .terminal_widget import TerminalWidget
+
+
+# ===================================================================
+# Modal screens
+# ===================================================================
+
+
+class NewSessionScreen(ModalScreen):
+    """Modal: gather name / project / model for a new session."""
+
+    def compose(self):
+        with Vertical(id="dialog"):
+            yield Label("New Claude Code Session", classes="title")
+            yield Input(placeholder="Session name", id="name")
+            yield Input(
+                placeholder="Project path (e.g. . or ~/projects/app)",
+                id="project",
+                value=".",
+            )
+            yield Input(
+                placeholder="Model (optional, e.g. sonnet, deepseek-pro)",
+                id="model",
+            )
+            with Horizontal(id="buttons"):
+                yield Button("Create", variant="primary", id="create")
+                yield Button("Cancel", id="cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "create":
+            self.dismiss(
+                {
+                    "name": self.query_one("#name", Input).value.strip(),
+                    "project": self.query_one("#project", Input).value.strip(),
+                    "model": self.query_one("#model", Input).value.strip() or None,
+                }
+            )
+        else:
+            self.dismiss(None)
+
+    def on_mount(self) -> None:
+        self.query_one("#name", Input).focus()
+
+
+class RenameScreen(ModalScreen):
+    """Modal: rename a session."""
+
+    def __init__(self, current_name: str) -> None:
+        super().__init__()
+        self._current = current_name
+
+    def compose(self):
+        with Vertical(id="dialog"):
+            yield Label("Rename Session", classes="title")
+            yield Label(f"Current: {self._current}")
+            yield Input(placeholder="New name", id="name", value=self._current)
+            yield Input(
+                placeholder="Model (optional, leave blank to keep current)",
+                id="model",
+            )
+            with Horizontal(id="buttons"):
+                yield Button("Apply", variant="primary", id="apply")
+                yield Button("Cancel", id="cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "apply":
+            self.dismiss(
+                {
+                    "name": self.query_one("#name", Input).value.strip(),
+                    "model": self.query_one("#model", Input).value.strip() or None,
+                }
+            )
+        else:
+            self.dismiss(None)
+
+    def on_mount(self) -> None:
+        self.query_one("#name", Input).focus()
+
+
+class ConfirmKill(ModalScreen):
+    """Confirm destroying a session."""
+
+    def __init__(self, session_name: str) -> None:
+        super().__init__()
+        self._name = session_name
+
+    def compose(self):
+        with Vertical(id="dialog"):
+            yield Label(f"Kill session '{self._name}'?", classes="title")
+            yield Label("All unsaved work will be lost.")
+            with Horizontal(id="buttons"):
+                yield Button("Kill", variant="error", id="kill")
+                yield Button("Cancel", variant="primary", id="cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "kill")
+
+
+# ===================================================================
+# Sidebar item
+# ===================================================================
+
+
+class SessionListItem(ListItem):
+    """A single row in the sidebar session list."""
+
+    def __init__(self, session: Session, active: bool = False) -> None:
+        super().__init__()
+        self.session_name = session.name
+        self._project = Path(session.project).name
+        self._model = session.model
+        self._active = active
+
+    def compose(self):
+        indicator = "●" if self._active else "○"
+        yield Label(f"{indicator} {self.session_name}", classes="sess-name")
+        yield Label(f"  {self._project}", classes="sess-detail")
+        yield Label(f"  {self._model}", classes="sess-detail")
+
+
+# ===================================================================
+# Main app
+# ===================================================================
+
+
+class PtyApp(App):
+    """Multi-session Claude Code manager with embedded PTY terminals."""
+
+    BINDINGS = [
+        Binding("ctrl+n", "new_session", "New", priority=True),
+        Binding("ctrl+w", "kill_session", "Kill", priority=True),
+        Binding("ctrl+r", "rename_session", "Rename", priority=True),
+        Binding("ctrl+space", "focus_sidebar", "Sidebar", priority=True),
+        Binding("ctrl+q", "quit", "Quit", priority=True),
+        Binding("f5", "refresh_sidebar", "Refresh", priority=True),
+    ]
+
+    CSS = """
+    Screen { layout: vertical; }
+
+    #body { height: 1fr; }
+
+    /* ---- Sidebar ---- */
+    #sidebar {
+        width: 28;
+        dock: left;
+        border: solid $primary;
+        height: 100%;
+    }
+    #sidebar-title {
+        padding: 0 1;
+        background: $primary;
+        color: $text;
+        text-style: bold;
+    }
+    #session-list { height: 1fr; }
+    #session-list:focus { border: none; }
+
+    SessionListItem {
+        padding: 0 1;
+        height: auto;
+    }
+    SessionListItem:hover {
+        background: $boost;
+    }
+    SessionListItem > .sess-name {
+        text-style: bold;
+    }
+    SessionListItem > .sess-detail {
+        color: $text-muted;
+    }
+
+    #sidebar-actions {
+        height: auto;
+        border-top: solid $primary;
+        padding: 0 1;
+        color: $text-muted;
+    }
+
+    /* ---- Main area ---- */
+    #main-area {
+        height: 100%;
+    }
+
+    #placeholder {
+        content-align: center middle;
+        color: $text-muted;
+        height: 100%;
+    }
+
+    /* ---- Modal dialogs ---- */
+    #dialog {
+        padding: 1 2;
+        width: 54;
+        min-height: 10;
+        border: thick $primary;
+        background: $surface;
+    }
+    #buttons { height: 3; align: center middle; }
+    .title { text-style: bold; padding-bottom: 1; }
+    Input { margin-bottom: 1; }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.manager = Manager()
+        self._terminals: dict[str, TerminalWidget] = {}
+        self._active: str | None = None
+
+    def compose(self):
+        yield Header(show_clock=False)
+        with Horizontal(id="body"):
+            with Vertical(id="sidebar"):
+                yield Label("Sessions", id="sidebar-title")
+                yield ListView(id="session-list")
+                with Vertical(id="sidebar-actions"):
+                    yield Label("[Ctrl+N] New  [Ctrl+W] Kill")
+                    yield Label("[Ctrl+R] Rename  [Ctrl+Space] Sidebar")
+            with Vertical(id="main-area"):
+                yield Static(
+                    "No session selected.\nPress Ctrl+N to create one.",
+                    id="placeholder",
+                )
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._refresh_sidebar()
+
+    # ------------------------------------------------------------------
+    # Sidebar
+    # ------------------------------------------------------------------
+
+    def _refresh_sidebar(self) -> None:
+        lv = self.query_one("#session-list", ListView)
+        lv.clear()
+        sessions = self.manager.list()
+        for s in sessions:
+            item = SessionListItem(s, active=(s.name == self._active))
+            lv.append(item)
+        # Keep selection aligned
+        if lv.children and self._active:
+            for i, child in enumerate(lv.children):
+                if getattr(child, "session_name", None) == self._active:
+                    lv.index = i
+                    break
+
+    # ------------------------------------------------------------------
+    # Session switching
+    # ------------------------------------------------------------------
+
+    def _show_session(self, name: str) -> None:
+        placeholder = self.query_one("#placeholder", Static)
+        placeholder.display = True  # hidden when any terminal is visible
+
+        for tname, term in self._terminals.items():
+            visible = tname == name
+            term.display = visible
+            if visible:
+                placeholder.display = False
+                if not term.has_focus:
+                    term.focus()
+
+        self._active = name
+        self._refresh_sidebar()
+
+    async def _ensure_terminal(self, name: str) -> bool:
+        """Create a TerminalWidget for *name* if one doesn't exist yet."""
+        if name in self._terminals:
+            return True
+
+        session = self.manager.get(name)
+        if session is None:
+            return False
+
+        cmd = f"cd {shlex.quote(session.project)} && exec claude"
+        term = TerminalWidget(cmd, session_name=name)
+        term.display = False
+        self._terminals[name] = term
+        await self.query_one("#main-area", Vertical).mount(term)
+        return True
+
+    async def on_list_view_selected(self, event: ListView.Selected) -> None:
+        item = event.item
+        name = getattr(item, "session_name", None)
+        if name is not None:
+            ok = await self._ensure_terminal(name)
+            if ok:
+                self._show_session(name)
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+
+    @work
+    async def action_new_session(self) -> None:
+        self.push_screen(NewSessionScreen(), self._on_new_session)
+
+    async def _on_new_session(self, result) -> None:
+        if result is None:
+            return
+        name = result["name"]
+        project = result["project"]
+        model = result["model"]
+
+        if not name or not project:
+            self.notify("Name and project are required", severity="error")
+            return
+
+        project_path = Path(project).expanduser().resolve()
+        if not project_path.is_dir():
+            self.notify(f"Directory not found: {project_path}", severity="error")
+            return
+
+        if self.manager.get(name):
+            self.notify(f"Session '{name}' already exists", severity="error")
+            return
+
+        try:
+            if model:
+                Manager.apply_model(str(project_path), model)
+                detected = model
+            else:
+                detected = Manager.detect_model(str(project_path))
+
+            self.manager.add(name, str(project_path), detected)
+
+            ok = await self._ensure_terminal(name)
+            if ok:
+                self._show_session(name)
+                self.notify(f"Session '{name}' created")
+        except RuntimeError as exc:
+            self.notify(str(exc), severity="error", timeout=10)
+
+    def action_kill_session(self) -> None:
+        if self._active is None:
+            self.notify("No active session", severity="warning")
+            return
+        self.push_screen(
+            ConfirmKill(self._active),
+            self._on_kill_confirm,
+        )
+
+    async def _on_kill_confirm(self, confirmed: bool) -> None:
+        if not confirmed or self._active is None:
+            return
+        name = self._active
+
+        # Remove terminal widget
+        if name in self._terminals:
+            term = self._terminals.pop(name)
+            await term.remove()
+
+        # Remove metadata
+        self.manager.remove(name)
+
+        # Switch to another session or go empty
+        remaining = self.manager.list()
+        if remaining:
+            self._active = remaining[0].name
+            await self._ensure_terminal(self._active)
+            self._show_session(self._active)
+        else:
+            self._active = None
+            placeholder = self.query_one("#placeholder", Static)
+            placeholder.display = True
+
+        self._refresh_sidebar()
+        self.notify(f"Session '{name}' killed")
+
+    def action_rename_session(self) -> None:
+        if self._active is None:
+            self.notify("No active session", severity="warning")
+            return
+        self.push_screen(
+            RenameScreen(self._active),
+            self._on_rename,
+        )
+
+    async def _on_rename(self, result) -> None:
+        if result is None or self._active is None:
+            return
+        new_name = result["name"]
+        new_model = result["model"]
+        old_name = self._active
+
+        if new_name and new_name != old_name:
+            self.manager.rename(old_name, new_name)
+            if old_name in self._terminals:
+                self._terminals[new_name] = self._terminals.pop(old_name)
+                self._terminals[new_name].session_name = new_name
+            self._active = new_name
+
+        if new_model:
+            try:
+                session = self.manager.get(self._active)
+                if session:
+                    Manager.apply_model(session.project, new_model)
+                    self.manager.set_model(self._active, new_model)
+            except RuntimeError as exc:
+                self.notify(str(exc), severity="error", timeout=10)
+
+        self._refresh_sidebar()
+
+    def action_focus_sidebar(self) -> None:
+        lv = self.query_one("#session-list", ListView)
+        lv.focus()
+
+    @work
+    async def action_refresh_sidebar(self) -> None:
+        self._refresh_sidebar()
+        self.notify("Refreshed")
+```
+

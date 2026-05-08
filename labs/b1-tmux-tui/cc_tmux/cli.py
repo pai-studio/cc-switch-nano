@@ -68,7 +68,7 @@ def cmd_set_model(name: str, model: str):
     mgr = _manager()
     try:
         mgr.set_model(name, model)
-        print(f"Session '{name}' model → {model}")
+        print(f"Restarted session '{name}' with model {model}")
     except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -115,7 +115,13 @@ def cli():
     p_new = sub.add_parser("new", help="Create a new session")
     p_new.add_argument("name", help="Session name")
     p_new.add_argument("-p", "--project", default=".", help="Project directory")
-    p_new.add_argument("-m", "--model", default=None, help="Model name (e.g. sonnet)")
+    p_new.add_argument(
+        "-m",
+        "--model",
+        "--cc-model",
+        default=None,
+        help="claude-switch profile/model (e.g. sonnet, deepseek-flash)",
+    )
 
     # attach
     p_attach = sub.add_parser("attach", help="Attach to a session")
@@ -126,9 +132,9 @@ def cli():
     p_kill.add_argument("name", help="Session name")
 
     # model
-    p_model = sub.add_parser("model", help="Set model for a session")
+    p_model = sub.add_parser("model", help="Restart a session with a model")
     p_model.add_argument("name", help="Session name")
-    p_model.add_argument("model", help="Model name (e.g. sonnet)")
+    p_model.add_argument("model", help="claude-switch profile/model (e.g. sonnet)")
 
     # rename
     p_rename = sub.add_parser("rename", help="Rename a session")
@@ -160,4 +166,4 @@ def cli():
 
 
 if __name__ == "__main__":
-    main()
+    cli()

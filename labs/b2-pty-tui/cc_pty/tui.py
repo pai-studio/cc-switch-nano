@@ -1,9 +1,7 @@
-"""TUI for cc-pty — sidebar + embedded terminal emulator."""
+"""TUI for cc-pty -- sidebar + embedded terminal emulator."""
 
-import shlex
 from pathlib import Path
 
-from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -65,7 +63,7 @@ class NewSessionScreen(ModalScreen):
 
 
 class RenameScreen(ModalScreen):
-    """Modal: rename a session."""
+    """Modal: rename a session or change its model."""
 
     def __init__(self, current_name: str) -> None:
         super().__init__()
@@ -77,7 +75,7 @@ class RenameScreen(ModalScreen):
             yield Label(f"Current: {self._current}")
             yield Input(placeholder="New name", id="name", value=self._current)
             yield Input(
-                placeholder="Model (optional, leave blank to keep current)",
+                placeholder="Model (changes take effect on restart)",
                 id="model",
             )
             with Horizontal(id="buttons"):
@@ -149,12 +147,12 @@ class PtyApp(App):
     """Multi-session Claude Code manager with embedded PTY terminals."""
 
     BINDINGS = [
-        Binding("ctrl+n", "new_session", "New", priority=True),
-        Binding("ctrl+w", "kill_session", "Kill", priority=True),
-        Binding("ctrl+r", "rename_session", "Rename", priority=True),
-        Binding("ctrl+space", "focus_sidebar", "Sidebar", priority=True),
-        Binding("ctrl+q", "quit", "Quit", priority=True),
-        Binding("f5", "refresh_sidebar", "Refresh", priority=True),
+        Binding("ctrl+n", "new_session", "New"),
+        Binding("ctrl+w", "kill_session", "Kill"),
+        Binding("ctrl+r", "rename_session", "Rename"),
+        Binding("ctrl+space", "focus_sidebar", "Sidebar"),
+        Binding("ctrl+q", "quit", "Quit"),
+        Binding("f5", "refresh_sidebar", "Refresh"),
     ]
 
     CSS = """
@@ -272,7 +270,7 @@ class PtyApp(App):
 
     def _show_session(self, name: str) -> None:
         placeholder = self.query_one("#placeholder", Static)
-        placeholder.display = True  # hidden when any terminal is visible
+        placeholder.display = True
 
         for tname, term in self._terminals.items():
             visible = tname == name
@@ -285,21 +283,37 @@ class PtyApp(App):
         self._active = name
         self._refresh_sidebar()
 
-    async def _ensure_terminal(self, name: str) -> bool:
-        """Create a TerminalWidget for *name* if one doesn't exist yet."""
-        if name in self._terminals:
-            return True
-
+    async def _create_terminal(self, name: str) -> bool:
+        """Create a new TerminalWidget for *name*, spawns a fresh PTY."""
         session = self.manager.get(name)
         if session is None:
             return False
 
-        cmd = f"cd {shlex.quote(session.project)} && exec claude"
-        term = TerminalWidget(cmd, session_name=name)
+        term = TerminalWidget("claude", cwd=session.project, session_name=name)
         term.display = False
         self._terminals[name] = term
         await self.query_one("#main-area", Vertical).mount(term)
         return True
+
+    async def _ensure_terminal(self, name: str) -> bool:
+        """Get or create a TerminalWidget for *name*."""
+        term = self._terminals.get(name)
+        if term is not None and getattr(term, "_alive", False):
+            return True
+        if term is not None:
+            self._terminals.pop(name, None)
+            try:
+                await term.remove()
+            except Exception:
+                pass
+        return await self._create_terminal(name)
+
+    async def _restart_terminal(self, name: str) -> bool:
+        """Kill and recreate the terminal for *name* (e.g. after model change)."""
+        if name in self._terminals:
+            old = self._terminals.pop(name)
+            await old.remove()
+        return await self._create_terminal(name)
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         item = event.item
@@ -313,7 +327,6 @@ class PtyApp(App):
     # Actions
     # ------------------------------------------------------------------
 
-    @work
     async def action_new_session(self) -> None:
         self.push_screen(NewSessionScreen(), self._on_new_session)
 
@@ -333,11 +346,11 @@ class PtyApp(App):
             self.notify(f"Directory not found: {project_path}", severity="error")
             return
 
-        if self.manager.get(name):
-            self.notify(f"Session '{name}' already exists", severity="error")
-            return
-
         try:
+            if self.manager.get(name):
+                self.notify(f"Session '{name}' already exists", severity="error")
+                return
+
             if model:
                 Manager.apply_model(str(project_path), model)
                 detected = model
@@ -350,7 +363,7 @@ class PtyApp(App):
             if ok:
                 self._show_session(name)
                 self.notify(f"Session '{name}' created")
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:
             self.notify(str(exc), severity="error", timeout=10)
 
     def action_kill_session(self) -> None:
@@ -367,15 +380,12 @@ class PtyApp(App):
             return
         name = self._active
 
-        # Remove terminal widget
         if name in self._terminals:
             term = self._terminals.pop(name)
             await term.remove()
 
-        # Remove metadata
         self.manager.remove(name)
 
-        # Switch to another session or go empty
         remaining = self.manager.list()
         if remaining:
             self._active = remaining[0].name
@@ -405,8 +415,16 @@ class PtyApp(App):
         new_model = result["model"]
         old_name = self._active
 
-        if new_name and new_name != old_name:
-            self.manager.rename(old_name, new_name)
+        if not new_name:
+            self.notify("Session name cannot be empty", severity="error")
+            return
+
+        if new_name != old_name:
+            try:
+                self.manager.rename(old_name, new_name)
+            except ValueError as exc:
+                self.notify(str(exc), severity="error")
+                return
             if old_name in self._terminals:
                 self._terminals[new_name] = self._terminals.pop(old_name)
                 self._terminals[new_name].session_name = new_name
@@ -418,7 +436,16 @@ class PtyApp(App):
                 if session:
                     Manager.apply_model(session.project, new_model)
                     self.manager.set_model(self._active, new_model)
-            except RuntimeError as exc:
+                    # Restart the terminal so the running Claude picks up the new model
+                    if self._active in self._terminals:
+                        await self._restart_terminal(self._active)
+                        self._show_session(self._active)
+                        self.notify(
+                            f"Model changed to {new_model}, terminal restarted"
+                        )
+                    else:
+                        self.notify(f"Model set to {new_model} (next launch)")
+            except (RuntimeError, ValueError) as exc:
                 self.notify(str(exc), severity="error", timeout=10)
 
         self._refresh_sidebar()
@@ -427,7 +454,6 @@ class PtyApp(App):
         lv = self.query_one("#session-list", ListView)
         lv.focus()
 
-    @work
     async def action_refresh_sidebar(self) -> None:
         self._refresh_sidebar()
         self.notify("Refreshed")
