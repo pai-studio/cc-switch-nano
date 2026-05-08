@@ -28,17 +28,12 @@ HELP = """\
 ccs — run Claude Code sessions with provider/model
 
 QUICK START
-  ccs
-      Open the read-only session panel. Sessions keep running after you leave.
-
-  ccs models
-      List built-in provider/model shortcuts.
-
   export DEEPSEEK_API_KEY="sk-..."
       ccs reads API keys from environment variables. It does not store keys.
 
   ccs claude --cc-model ds/flash
-      Start Claude Code in the current directory with DeepSeek Flash.
+      Start the original Claude Code UI in the current directory with DeepSeek Flash.
+      This is the primary lightweight path: no tmux, no daemon, no panel.
 
   ccs claude --cc-model sonnet --permission-mode acceptEdits
       Start the original Claude UI with a model config and pass --permission-mode to Claude itself.
@@ -47,68 +42,31 @@ QUICK START
       Show the original Claude help. If no --cc-* option is present, ccs simply
       forwards all arguments to the original tool.
 
-COMMON EXAMPLES
-  ccs
-  ccs new claude ds/flash --permission-mode acceptEdits
-  ccs attach api-review
-  ccs providers
   ccs models
-  ccs tui
-  ccs model show or/kimi-k2.6
+      List built-in provider/model shortcuts.
+
+COMMON EXAMPLES
   ccs claude --cc-model ds/flash
   ccs claude --cc-model ds/pro --cc-name api-review
   ccs claude --cc-model or/kimi-k2.6 --cc-project ~/work/app
-  ccs new claude an/sonnet --cc-no-attach
   ccs claude --cc-model ds/flash --cc-dry-run
   ccs claude --cc-model sonnet --permission-mode acceptEdits --add-dir ../shared
+  ccs models
+  ccs providers
+  ccs model show or/kimi-k2.6
   ccs models add or/qwen3-coder qwen/qwen3-coder
 
-SESSION MANAGEMENT
-  ccs
-      Open the read-only session panel.
+MULTI-SESSION WITH TMUX
+  tmux is optional. Use normal terminal windows with `ccs claude ...` when that is enough.
+  Use `ccs tmux ...` only when you want named sessions that survive detach/reattach.
 
-  ccs new <tool> <model> [tool args...]
-      Create a daemon-backed session without opening UI. Tools: claude, codex, opencode.
-
-  ccs attach <name>
-      Open the read-only panel and select a named daemon-backed session.
-
-  ccs panel
-      Open the read-only session panel.
-
-  ccs tmux ...
-      Use the legacy tmux backend explicitly.
-
-  ccs list
-      List daemon-backed sessions.
-
-  ccs list --json
-      Print daemon-backed sessions as JSON.
-
-  ccs attach
-      Open the read-only panel.
-
-  ccs attach <name>
-      Open the read-only panel and select a named session.
-
-  ccs kill <name>
-      Kill a daemon-backed session.
-
-  ccs monitor [name...] [--lines N]
-      Watch recent output from one or more sessions without attaching.
-
-  ccs workbench
-      Experimental interactive embedded terminal. Not the default path.
-
-  ccs switch <name> [model]
-      Restart a session. If model is provided, switch to it first.
-
-LEGACY TMUX BACKEND
+  ccs tmux claude --cc-name code --cc-model ds/flash
+  ccs tmux claude --cc-name review --cc-model an/sonnet
+  ccs tmux attach code
+  ccs tmux attach review
   ccs tmux list
-  ccs tmux attach <name>
   ccs tmux switch <name> [model]
   ccs tmux kill <name>
-  ccs tmux claude --cc-model ds/flash
   ccs tui
       Open the legacy tmux TUI.
 
@@ -143,38 +101,24 @@ CCS OPTIONS
   --cc-model <model>     provider/model for this session
   --cc-name <name>       session name; auto-generated when omitted
   --cc-project <dir>     project directory; defaults to current directory
-  --cc-no-attach         only for `ccs new` / legacy `ccs tmux claude`
+  --cc-no-attach         only for `ccs tmux claude`
   --cc-dry-run           print generated command without creating a session
 
 REQUIREMENTS
-  claude/codex/opencode must be available on PATH for daemon-backed sessions.
-  tmux is only required for `ccs tmux ...` legacy sessions.
+  claude/codex/opencode must be available on PATH.
+  tmux is only required for `ccs tmux ...` sessions.
   API keys are read from environment variables, for example DEEPSEEK_API_KEY.
 
-PANEL KEYS
-  F2 / Tab              switch focus between sidebar and terminal
-  Fn-Up / Fn-Down       scroll terminal snapshot
-  F10 / q               leave panel; sessions keep running
-
 COMMAND SUMMARY
-  ccs
-  ccs new <tool> <model> [tool args...]
   ccs claude [claude args...] [--cc-model MODEL]
-  ccs daemon start|ping|stop
+  ccs codex [codex args...] [--cc-model MODEL]
+  ccs opencode [opencode args...] [--cc-model MODEL]
   ccs models [provider]
   ccs models add <provider/model-alias> <actual-model>
   ccs models rm <provider/model-alias>
   ccs providers
   ccs model show <model>
   ccs tui
-  ccs panel
-  ccs list
-  ccs list --json
-  ccs attach [name]
-  ccs kill <name>
-  ccs switch <name> [model]
-  ccs monitor [name...]
-  ccs workbench
   ccs tmux <legacy-command>
 """
 
@@ -182,17 +126,12 @@ HELP_ZH = """\
 ccs — 用 provider/model 运行 Claude Code 会话
 
 快速开始
-  ccs
-      打开只读 session panel。退出后 session 继续运行。
-
-  ccs models
-      查看内置 provider/model 快捷名。
-
   export DEEPSEEK_API_KEY="sk-..."
       ccs 只从环境变量读取 API key，不保存密钥。
 
   ccs claude --cc-model ds/flash
-      在当前目录用 DeepSeek Flash 启动 Claude Code。
+      在当前目录用 DeepSeek Flash 启动原始 Claude Code UI。
+      这是主路径：不进 tmux、不启动 daemon、不打开 panel。
 
   ccs claude --cc-model sonnet --permission-mode acceptEdits
       用指定模型直接启动原始 Claude UI，并把 --permission-mode 原样传给 Claude。
@@ -201,68 +140,32 @@ ccs — 用 provider/model 运行 Claude Code 会话
       显示原始 Claude 帮助。只要没有 --cc-* 参数，ccs 就会把所有参数
       原样转发给原始工具。
 
-常用示例
-  ccs
-  ccs new claude ds/flash --permission-mode acceptEdits
-  ccs attach api-review
-  ccs providers
   ccs models
-  ccs tui
-  ccs model show or/kimi-k2.6
+      查看内置 provider/model 快捷名。
+
+常用示例
   ccs claude --cc-model ds/flash
   ccs claude --cc-model ds/pro --cc-name api-review
   ccs claude --cc-model or/kimi-k2.6 --cc-project ~/work/app
-  ccs new claude an/sonnet --cc-no-attach
   ccs claude --cc-model ds/flash --cc-dry-run
   ccs claude --cc-model sonnet --permission-mode acceptEdits --add-dir ../shared
+  ccs models
+  ccs providers
+  ccs model show or/kimi-k2.6
   ccs models add or/qwen3-coder qwen/qwen3-coder
 
-会话管理
-  ccs
-      打开 daemon-backed 工作台。
+多 session: tmux 路线
+  tmux 是可选能力。如果多个普通终端窗口已经够用，直接分别运行
+  `ccs claude ...` 即可。
+  只有需要命名 session、断开后重连、后台存活时，才使用 `ccs tmux ...`。
 
-  ccs new <tool> <model> [tool args...]
-      创建 daemon-backed session，不自动打开 UI。工具支持 claude、codex、opencode。
-
-  ccs attach <name>
-      打开只读 panel 并选中指定 daemon-backed session。
-
-  ccs panel
-      打开只读 session panel。
-
-  ccs tmux ...
-      显式使用 legacy tmux backend。
-
-  ccs list
-      列出 daemon-backed session。
-
-  ccs list --json
-      以 JSON 格式输出 daemon-backed session。
-
-  ccs attach
-      打开只读 panel。
-
-  ccs attach <name>
-      打开只读 panel 并选中指定 session。
-
-  ccs kill <name>
-      删除 daemon-backed session。
-
-  ccs monitor [name...] [--lines N]
-      在普通命令行同时查看一个或多个 session 的最近输出，不进入 Claude。
-
-  ccs workbench
-      实验性交互式嵌入终端。不是默认路径。
-
-  ccs switch <name> [model]
-      重启会话。传 model 时先切换到该模型。
-
-Legacy tmux backend
+  ccs tmux claude --cc-name code --cc-model ds/flash
+  ccs tmux claude --cc-name review --cc-model an/sonnet
+  ccs tmux attach code
+  ccs tmux attach review
   ccs tmux list
-  ccs tmux attach <name>
   ccs tmux switch <name> [model]
   ccs tmux kill <name>
-  ccs tmux claude --cc-model ds/flash
   ccs tui
       打开 legacy tmux TUI。
 
@@ -297,38 +200,24 @@ ccs 参数
   --cc-model <model>     当前会话使用的 provider/model
   --cc-name <name>       会话名；不填则自动生成
   --cc-project <dir>     项目目录；默认当前目录
-  --cc-no-attach         仅用于 `ccs new` / legacy `ccs tmux claude`
+  --cc-no-attach         仅用于 `ccs tmux claude`
   --cc-dry-run           打印生成的命令，不创建会话
 
 依赖
-  daemon-backed session 需要 claude/codex/opencode 在 PATH 中可用。
-  tmux 只用于 `ccs tmux ...` legacy session。
+  claude/codex/opencode 需要在 PATH 中可用。
+  tmux 只用于 `ccs tmux ...` session。
   API key 只从环境变量读取，例如 DEEPSEEK_API_KEY。
 
-Panel 快捷键
-  F2 / Tab              在左侧列表和右侧终端间切换焦点
-  Fn-Up / Fn-Down       滚动右侧终端 snapshot
-  F10 / q               离开 panel；session 继续运行
-
 命令摘要
-  ccs
-  ccs new <tool> <model> [tool args...]
   ccs claude [claude args...] [--cc-model MODEL]
-  ccs daemon start|ping|stop
+  ccs codex [codex args...] [--cc-model MODEL]
+  ccs opencode [opencode args...] [--cc-model MODEL]
   ccs models [provider]
   ccs models add <provider/model-alias> <actual-model>
   ccs models rm <provider/model-alias>
   ccs providers
   ccs model show <model>
   ccs tui
-  ccs panel
-  ccs list
-  ccs list --json
-  ccs attach [name]
-  ccs kill <name>
-  ccs switch <name> [model]
-  ccs monitor [name...]
-  ccs workbench
   ccs tmux <legacy-command>
 """
 
@@ -352,8 +241,6 @@ MANAGEMENT = {
     "daemon",
     "new",
     "restart",
-    "workbench",
-    "panel",
     "tmux",
 }
 
@@ -377,7 +264,7 @@ def main(argv: list[str] | None = None) -> None:
         print(HELP)
         return
     if not args:
-        _run_workbench([], read_only=True)
+        print(HELP)
         return
 
     head, rest = args[0], args[1:]
@@ -430,12 +317,6 @@ def _run_management(command: str, args: list[str]) -> None:
     if command == "restart":
         _run_restart(args)
         return
-    if command == "workbench":
-        _run_workbench(args, read_only=False)
-        return
-    if command == "panel":
-        _run_workbench(args, read_only=True)
-        return
     if command == "tmux":
         _run_tmux(args)
         return
@@ -485,9 +366,7 @@ def _run_daemon_management(command: str, args: list[str]) -> None:
             else:
                 _print_daemon_sessions(client.call("session.list"))
         elif command == "attach":
-            if len(args) > 1:
-                raise RuntimeError("usage: ccs attach [name]")
-            _run_workbench(["--select", args[0]] if args else [])
+            raise RuntimeError("ccs attach is disabled. Use `ccs tmux attach <name>` for tmux sessions.")
         elif command == "kill":
             if len(args) != 1:
                 raise RuntimeError("usage: ccs kill <name>")
@@ -573,7 +452,7 @@ def _run_new(args: list[str]) -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
     print(f"Created session '{session['name']}' ({session['tool']}, {session['model']})")
-    print("Run: ccs monitor  # or ccs panel")
+    print("Run: ccs monitor")
 
 
 def _run_restart(args: list[str]) -> None:
@@ -630,7 +509,7 @@ def _run_tmux(args: list[str]) -> None:
 
 def _print_daemon_sessions(sessions: list[dict]) -> None:
     if not sessions:
-        print("No sessions. Use 'ccs new claude ds/flash' or run 'ccs'.")
+        print("No daemon sessions. For the stable path, use 'ccs claude --cc-model ds/flash' or 'ccs tmux claude ...'.")
         return
     hdr = f"{'Name':<24} {'Tool':<10} {'Model':<24} {'Status':<10} Project"
     print(hdr)
@@ -655,7 +534,7 @@ def _run_daemon_monitor(client: CcsClient, args: list[str]) -> None:
                     raise RuntimeError(f"session not found: {', '.join(sorted(missing))}")
             print("\033[H\033[2J", end="")
             print("ccs monitor")
-            print("Ctrl-C quit | ccs attach <name> to interact")
+            print("Ctrl-C quit | use ccs tmux attach <name> for tmux sessions")
             print("")
             for session in sessions:
                 snap = client.call("terminal.snapshot", {"name": session["id"], "lines": lines})

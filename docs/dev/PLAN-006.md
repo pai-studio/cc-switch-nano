@@ -1,52 +1,52 @@
-# PLAN-006: ccs 三层会话方案
+# PLAN-006: ccs launcher-first + 可选 tmux session
 
 > 日期: 2026-05-08
 > 状态: 实施中
-> 目标: 低负担模型启动 + 可托管多会话 + 独立观察面板
+> 目标: 低负担模型启动 + 可选稳定 tmux 多会话
 
 ## 0. 当前决策
 
-最终用户接口分三层，避免混用：
+Textual panel/workbench 不再作为公开入口推进。
+
+原因：
+
+- 嵌入 Claude Code TUI 会改变 ANSI 渲染、复制、滚动、鼠标和焦点行为。
+- 实际界面明显不如原始 Claude Code 干净，用户负担增加。
+- 轻量用户最需要的是“切模型后运行原始工具”，不是被迫进入 session 管理器。
+
+最终用户接口收敛为两条稳定路线：
 
 ```text
-launcher
+launcher, default recommendation
   ccs claude --cc-model ds/flash [claude args...]
   ccs codex --cc-model openai/gpt-5 [codex args...]
   ccs opencode --cc-model or/kimi-k2.6 [opencode args...]
 
-managed session
-  ccs new claude ds/flash --cc-name code [claude args...]
-  ccs list
-  ccs switch code ds/pro
-  ccs restart code
-  ccs kill code
-
-observer
-  ccs monitor [name...]
-  ccs panel
-  ccs web
-
-legacy tmux
-  ccs tmux claude --cc-model ds/flash
+optional tmux session management
+  ccs tmux claude --cc-name code --cc-model ds/flash
+  ccs tmux claude --cc-name review --cc-model an/sonnet
   ccs tmux list
   ccs tmux attach code
+  ccs tmux attach review
+  ccs tmux switch code ds/pro
+  ccs tmux kill review
 ```
 
 边界：
 
 - `ccs claude --cc-model ...` 是轻量 launcher：只注入模型配置并 `exec` 原始 Claude，不创建 daemon session，不进 tmux，不打开 UI。
-- `ccs new ...` 才创建 daemon managed session。
-- `ccs list/switch/restart/kill/monitor/panel` 只管理 daemon session。
-- `ccs tmux ...` 只管理 legacy tmux session。
+- `ccs` 无参数只显示帮助，不打开 panel。
+- `ccs panel` / `ccs workbench` 不作为公开命令。
+- `ccs tmux ...` 只管理 tmux session。
 - 不在一个列表里混合 daemon/tmux/launcher session。
-- observer 默认只读；不把 Claude/Codex/OpenCode 的完整 TUI 嵌入 Textual 并宣称等价。
-- 如果需要原始工具 UI，使用 launcher 或 `ccs tmux ...`。
+- 如果用户只需要多个并行 Claude Code，推荐多个普通终端窗口分别运行 `ccs claude ...`。
+- 只有需要 session 存活、detach/attach、远程机器或命名管理时，才使用 tmux。
 
 原因：
 
-- 嵌入 Claude Code TUI 会改变 ANSI 渲染、滚动、复制、鼠标和焦点行为。
-- 轻量用户最需要的是“切模型后运行原始工具”，不是被迫进入 session 管理器。
-- 多 session 管理需要 daemon，但这应该由显式 `ccs new` 触发。
+- 多普通终端窗口是最低复杂度方案，保留原始 UI 和原始输入焦点行为。
+- tmux 是稳定、成熟、可恢复的 session 容器，但不是所有用户都需要。
+- daemon/panel 可以作为内部实验代码保留，但不应进入 README 和 `ccs --help` 主路径。
 
 后续章节保留了早期 workbench 方案的设计记录；实际实施以本节为准。
 

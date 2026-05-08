@@ -15,6 +15,7 @@ from claude_switch.ccs import (
     HELP_ZH,
     CcsOptions,
     _launcher_command,
+    main,
     _parse_cc_options,
     _parse_monitor_args,
     _parse_sidebar_args,
@@ -53,11 +54,19 @@ class CcsParseTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             _parse_cc_options(["--cc-nope"])
 
-    def test_help_mentions_tui(self):
+    def test_help_mentions_launcher_and_tmux(self):
         self.assertIn("ccs tui", HELP)
         self.assertIn("ccs tui", HELP_ZH)
-        self.assertIn("ccs new <tool> <model>", HELP)
+        self.assertIn("ccs claude --cc-model ds/flash", HELP)
         self.assertIn("ccs tmux", HELP)
+        self.assertNotIn("ccs panel", HELP)
+        self.assertNotIn("ccs workbench", HELP)
+
+    def test_no_args_prints_help_instead_of_opening_panel(self):
+        with patch("builtins.print") as print_:
+            main([])
+
+        print_.assert_called_once_with(HELP)
 
     def test_tui_rejects_extra_args(self):
         with self.assertRaises(SystemExit):
