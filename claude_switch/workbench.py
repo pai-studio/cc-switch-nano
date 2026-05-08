@@ -90,11 +90,13 @@ class ConfirmKillScreen(ModalScreen[bool]):
 
 class TerminalPane(Static):
     can_focus = True
-    focus_on_click = True
 
     def __init__(self, app_ref: "WorkbenchApp") -> None:
         super().__init__("")
         self.app_ref = app_ref
+
+    def focus_on_click(self) -> bool:
+        return True
 
     def on_key(self, event) -> None:
         if event.key in {"pageup", "page_up", "ctrl+up"}:
@@ -167,6 +169,7 @@ class WorkbenchApp(App):
         self.read_only = read_only
         self.sessions: list[dict] = []
         self.session_by_id: dict[str, dict] = {}
+        self._session_signature: tuple[tuple[str, str, str, str, str], ...] = ()
         self.terminal = TerminalPane(self)
         self.scroll_offset = 0
 
@@ -187,10 +190,16 @@ class WorkbenchApp(App):
         self.terminal.focus()
 
     def refresh_sessions(self) -> None:
-        self.sessions = self.client.call("session.list")
+        sessions = self.client.call("session.list")
+        signature = _session_signature(sessions)
+        selected_before = self.selected
+        self.sessions = sessions
         self.session_by_id = {session["id"]: session for session in self.sessions}
         if self.selected is None and self.sessions:
             self.selected = self.sessions[-1]["name"]
+        if signature == self._session_signature and selected_before == self.selected:
+            return
+        self._session_signature = signature
         list_view = self.query_one("#session-list", OptionList)
         selected_id = self._selected_id()
         previous_highlight = list_view.highlighted
@@ -246,13 +255,13 @@ class WorkbenchApp(App):
             return
         self.selected = session["name"]
         self.scroll_offset = 0
+        self._session_signature = ()
         try:
             self.client.call("session.activate", {"name": self.selected})
         except RpcError as exc:
             self.notify(str(exc), severity="error")
             return
         self.set_timer(0.05, self.refresh_sessions)
-        self.terminal.focus()
 
     def action_focus_sessions(self) -> None:
         self.query_one("#session-list", OptionList).focus()
@@ -376,6 +385,19 @@ def _session_prompt(session: dict, *, active: bool) -> Text:
     text.append(f"  {model}\n", style="dim")
     text.append(f"  {project_status}", style="dim")
     return text
+
+
+def _session_signature(sessions: list[dict]) -> tuple[tuple[str, str, str, str, str], ...]:
+    return tuple(
+        (
+            str(session.get("id", "")),
+            str(session.get("name", "")),
+            str(session.get("tool", "")),
+            str(session.get("model", "")),
+            str(session.get("status", "")),
+        )
+        for session in sessions
+    )
 
 
 def format_terminal_lines(lines: list[str], *, width: int, height: int) -> list[str]:

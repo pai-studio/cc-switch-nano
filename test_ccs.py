@@ -29,7 +29,7 @@ from claude_switch.store import CcsPaths, SessionStore
 from claude_switch.tui import CcsTuiApp, DEFAULT_TUI_MODEL, parse_new_session_request
 from claude_switch.adapters import get_adapter
 from claude_switch.daemon import _screen_lines
-from claude_switch.workbench import format_terminal_lines
+from claude_switch.workbench import TerminalPane, _session_signature, format_terminal_lines
 
 
 class CcsParseTests(unittest.TestCase):
@@ -427,6 +427,22 @@ class DaemonStoreTests(unittest.TestCase):
             format_terminal_lines(lines, width=5, height=3),
             ["short", "abcd…", "line…"],
         )
+
+    def test_terminal_pane_focus_on_click_is_callable_for_textual(self):
+        pane = TerminalPane(app_ref=None)
+
+        self.assertTrue(callable(pane.focus_on_click))
+        self.assertTrue(pane.focus_on_click())
+
+    def test_session_signature_ignores_transient_running_bool(self):
+        sessions = [
+            {"id": "1", "name": "api", "tool": "claude", "model": "ds/flash", "status": "running", "running": True}
+        ]
+        same = [
+            {"id": "1", "name": "api", "tool": "claude", "model": "ds/flash", "status": "running", "running": False}
+        ]
+
+        self.assertEqual(_session_signature(sessions), _session_signature(same))
 
 
 class TuiHelperTests(unittest.TestCase):
