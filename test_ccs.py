@@ -29,6 +29,7 @@ from claude_switch.store import CcsPaths, SessionStore
 from claude_switch.tui import CcsTuiApp, DEFAULT_TUI_MODEL, parse_new_session_request
 from claude_switch.adapters import get_adapter
 from claude_switch.daemon import _screen_lines
+from claude_switch.workbench import format_terminal_lines
 
 
 class CcsParseTests(unittest.TestCase):
@@ -418,6 +419,14 @@ class DaemonStoreTests(unittest.TestCase):
         stream.feed("\n".join(str(i) for i in range(10)))
 
         self.assertEqual(_screen_lines(screen, 4), ["      6", "       7", "        8", "         9"])
+
+    def test_panel_formats_terminal_lines_to_fit_width(self):
+        lines = ["short", "abcdef", "line\twith\ttabs"]
+
+        self.assertEqual(
+            format_terminal_lines(lines, width=5, height=3),
+            ["short", "abcd…", "line…"],
+        )
 
 
 class TuiHelperTests(unittest.TestCase):

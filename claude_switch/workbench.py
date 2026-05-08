@@ -4,27 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Input, Label, ListItem, ListView, Static
+from textual.widgets import Button, Footer, Header, Input, Label, OptionList, Static
+from textual.widgets._option_list import Option
 
 from .protocol import CcsClient, RpcError
-
-
-class SessionItem(ListItem):
-    def __init__(self, session: dict, active: bool) -> None:
-        super().__init__()
-        self.session_name = session["name"]
-        self.session_id = session["id"]
-        marker = "*" if active else " "
-        status = "run" if session.get("running") else session.get("status", "?")
-        project = session.get("project_name") or Path(session.get("project", "")).name
-        self.label = f"{marker} {session['name']}\n  {session['tool']} {session['model']}\n  {project} [{status}]"
-
-    def compose(self) -> ComposeResult:
-        yield Label(self.label)
 
 
 class NewSessionScreen(ModalScreen[dict | None]):
@@ -148,11 +136,6 @@ class WorkbenchApp(App):
         height: 100%;
     }
     #session-list { height: 1fr; }
-    SessionItem {
-        padding: 0 1;
-        height: auto;
-    }
-    SessionItem:hover { background: $boost; }
     #hints {
         height: auto;
         color: $text-muted;
@@ -163,6 +146,7 @@ class WorkbenchApp(App):
         height: 100%;
         padding: 0 1;
         border: solid $primary;
+        overflow: hidden;
     }
     TerminalPane:focus { border: double $accent; }
     #dialog {
@@ -182,6 +166,7 @@ class WorkbenchApp(App):
         self.selected = selected
         self.read_only = read_only
         self.sessions: list[dict] = []
+        self.session_by_id: dict[str, dict] = {}
         self.terminal = TerminalPane(self)
         self.scroll_offset = 0
 
@@ -190,7 +175,7 @@ class WorkbenchApp(App):
         with Horizontal(id="body"):
             with Vertical(id="sidebar"):
                 yield Label("Sessions")
-                yield ListView(id="session-list")
+                yield OptionList(id="session-list")
                 yield Static(self._hint_text(), id="hints")
             yield self.terminal
         yield Footer()
@@ -203,12 +188,25 @@ class WorkbenchApp(App):
 
     def refresh_sessions(self) -> None:
         self.sessions = self.client.call("session.list")
+        self.session_by_id = {session["id"]: session for session in self.sessions}
         if self.selected is None and self.sessions:
             self.selected = self.sessions[-1]["name"]
-        list_view = self.query_one("#session-list", ListView)
-        list_view.clear()
+        list_view = self.query_one("#session-list", OptionList)
+        selected_id = self._selected_id()
+        previous_highlight = list_view.highlighted
+        list_view.clear_options()
         for session in self.sessions:
-            list_view.append(SessionItem(session, active=session["name"] == self.selected))
+            active = session["id"] == selected_id
+            list_view.add_option(Option(_session_prompt(session, active=active), id=session["id"]))
+        if self.sessions:
+            active_index = next(
+                (index for index, session in enumerate(self.sessions) if session["id"] == selected_id),
+                None,
+            )
+            if active_index is not None:
+                list_view.highlighted = active_index
+            elif previous_highlight is not None:
+                list_view.highlighted = min(previous_highlight, len(self.sessions) - 1)
 
     def refresh_terminal(self) -> None:
         if not self.selected:
@@ -220,9 +218,12 @@ class WorkbenchApp(App):
         except RpcError as exc:
             self.terminal.update(f"Error: {exc}")
             return
-        visible = self._visible_lines(snap["lines"], max(10, self.size.height - 5))
+        height = max(10, self.size.height - 5)
+        width = max(20, self.size.width - 34)
+        visible = self._visible_lines(snap["lines"], height)
+        visible = format_terminal_lines(visible, width=width, height=height)
         suffix = f"\n\n-- scroll: {self.scroll_offset} lines above bottom --" if self.scroll_offset else ""
-        self.terminal.update(("\n".join(visible) or "(no output yet)") + suffix)
+        self.terminal.update(Text("\n".join(visible) or "(no output yet)") + Text(suffix, style="dim"))
 
     def send_terminal_input(self, data: str) -> None:
         if not self.selected or self.read_only:
@@ -236,21 +237,29 @@ class WorkbenchApp(App):
             self.scroll_offset = min(2000, self.scroll_offset)
         self.refresh_terminal()
 
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        item = event.item
-        if isinstance(item, SessionItem):
-            self.selected = item.session_name
-            self.scroll_offset = 0
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        session_id = event.option.id
+        if not isinstance(session_id, str):
+            return
+        session = self.session_by_id.get(session_id)
+        if session is None:
+            return
+        self.selected = session["name"]
+        self.scroll_offset = 0
+        try:
             self.client.call("session.activate", {"name": self.selected})
-            self.refresh_sessions()
-            self.terminal.focus()
+        except RpcError as exc:
+            self.notify(str(exc), severity="error")
+            return
+        self.set_timer(0.05, self.refresh_sessions)
+        self.terminal.focus()
 
     def action_focus_sessions(self) -> None:
-        self.query_one("#session-list", ListView).focus()
+        self.query_one("#session-list", OptionList).focus()
 
     def action_toggle_focus(self) -> None:
         if self.terminal.has_focus:
-            self.query_one("#session-list", ListView).focus()
+            self.query_one("#session-list", OptionList).focus()
         else:
             self.terminal.focus()
 
@@ -335,6 +344,12 @@ class WorkbenchApp(App):
                 return session
         return None
 
+    def _selected_id(self) -> str | None:
+        for session in self.sessions:
+            if session["name"] == self.selected or session["id"] == self.selected:
+                return session["id"]
+        return None
+
     def _visible_lines(self, lines: list[str], height: int) -> list[str]:
         if self.scroll_offset <= 0:
             return lines[-height:]
@@ -346,6 +361,38 @@ class WorkbenchApp(App):
         if self.read_only:
             return "read-only panel\nF2/tab focus  Fn-Up/Down scroll  F10/q leave"
         return "n new  s model  k kill\nF2/tab focus  Fn-Up/Down scroll"
+
+
+def _session_prompt(session: dict, *, active: bool) -> Text:
+    marker = "*" if active else " "
+    status = "run" if session.get("running") else session.get("status", "?")
+    project = session.get("project_name") or Path(session.get("project", "")).name
+    name = _clip(str(session["name"]), 24)
+    model = _clip(f"{session['tool']} {session['model']}", 24)
+    project_status = _clip(f"{project} [{status}]", 24)
+    style = "bold cyan" if active else ""
+    text = Text()
+    text.append(f"{marker} {name}\n", style=style)
+    text.append(f"  {model}\n", style="dim")
+    text.append(f"  {project_status}", style="dim")
+    return text
+
+
+def format_terminal_lines(lines: list[str], *, width: int, height: int) -> list[str]:
+    width = max(1, width)
+    result = []
+    for line in lines[-height:]:
+        clean = line.expandtabs(4).rstrip()
+        if len(clean) > width:
+            clean = clean[: max(1, width - 1)] + "…"
+        result.append(clean)
+    return result[-height:]
+
+
+def _clip(value: str, width: int) -> str:
+    if len(value) <= width:
+        return value
+    return value[: max(0, width - 1)] + "…"
 
 
 def key_to_text(event) -> str:
